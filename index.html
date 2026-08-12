@@ -85,7 +85,7 @@ let state = {
   heatmapMode: 'department', heatmapAxis: 'quarter', heatmapMetric: 'cost', heatmapCause: 'ALL',
   riskQuarterKey: null,
   refSearch: '', refGroup: 'ALL', refSource: 'ALL', refExpanded: new Set(), refAdding: false, refEditingId: null,
-  showPwBox: false, pwMsg: null,
+  showPwBox: false, pwMsg: null, sidebarOpen: false,
   rateChartRef: null, costRevenueChartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
 };
 
@@ -144,6 +144,7 @@ async function afterLogin(session) {
   state.user = session.user;
   const { data: profile } = await sb.from('bhyt_user_profiles').select('role').eq('id', session.user.id).single();
   state.role = profile?.role || 'viewer';
+  if (state.role !== 'editor' && state.tab === 'setup') state.tab = 'overview';
   await loadAll();
   render();
 }
@@ -396,18 +397,43 @@ function riskScoreForQuarter(qKeyStr) {
 function render() {
   const canEdit = state.role === 'editor';
   app.innerHTML = `
-    <div class="min-h-screen flex">
-      <aside class="w-60 shrink-0 bg-blue-900 text-white flex flex-col fixed inset-y-0 left-0">
-        <div class="px-5 py-5 border-b border-blue-800">
-          <h1 class="text-base font-semibold leading-snug">Theo dõi xuất toán BHYT</h1>
-          <p class="text-blue-300 text-xs mt-1">theo chuyên đề</p>
+    <div class="min-h-screen">
+      <div class="bg-blue-900 text-white flex items-center justify-between gap-3 px-4 py-3 sticky top-0 z-40 flex-wrap">
+        <button id="btn-toggle-sidebar" class="flex items-center gap-2.5 text-left hover:bg-blue-800/60 rounded-md px-2 py-1 -ml-2">
+          <span class="text-lg leading-none">☰</span>
+          <div>
+            <div class="text-sm font-bold leading-tight tracking-wide">SHI MANAGEMENT</div>
+            <div class="text-xs text-blue-300 leading-tight">Dashboard quản lý xuất toán BHYT</div>
+          </div>
+        </button>
+        <div class="flex items-center gap-2 flex-wrap">
+          ${canEdit ? `<input type="file" id="import-file" accept=".xlsx,.xls" class="hidden" />
+          <button id="btn-import" class="bg-white text-blue-900 hover:bg-blue-50 rounded-md px-3 py-2 text-sm font-medium">Import Excel</button>` : ''}
+          <button id="btn-export" class="border border-blue-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-blue-800">Export Excel</button>
+          <div class="relative">
+            <button id="btn-change-pw" class="border border-blue-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-blue-800">Đổi mật khẩu</button>
+            ${state.showPwBox ? `
+              <div class="absolute right-0 mt-2 bg-white text-slate-800 rounded-md shadow-lg border border-slate-200 p-3 w-64 z-50">
+                <label class="text-xs text-slate-500">Mật khẩu mới (tối thiểu 6 ký tự)</label>
+                <input id="pw-new" type="password" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+                <label class="text-xs text-slate-500 mt-2 block">Nhập lại mật khẩu mới</label>
+                <input id="pw-confirm" type="password" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
+                ${state.pwMsg ? `<div class="text-xs mt-2 ${state.pwMsg.ok ? 'text-emerald-600' : 'text-red-600'}">${escapeHtml(state.pwMsg.text)}</div>` : ''}
+                <button id="btn-pw-submit" class="mt-2 w-full bg-blue-900 text-white rounded py-1.5 text-sm font-medium hover:bg-blue-800">Đổi mật khẩu</button>
+              </div>` : ''}
+          </div>
+          <button id="btn-logout" class="border border-blue-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-blue-800">Đăng xuất</button>
         </div>
+      </div>
+
+      ${state.sidebarOpen ? '<div id="sidebar-backdrop" class="fixed inset-0 top-14 bg-black/30 z-20"></div>' : ''}
+      <aside class="fixed top-14 left-0 bottom-0 w-60 bg-blue-900 text-white flex flex-col z-30 transform transition-transform duration-200 ${state.sidebarOpen ? 'translate-x-0' : '-translate-x-full'}">
         <nav class="flex-1 py-3 overflow-y-auto">
           ${navItem('overview', 'Tổng quan', '📊')}
           ${navItem('details', 'Tra cứu theo kì xuất toán', '📋')}
           ${navItem('heatmap', 'Tra cứu theo khoa và cá nhân', '🗺️')}
           ${navItem('risk', 'Risk Score', '🚦')}
-          ${navItem('setup', 'Kỳ & Danh mục', '🗂️')}
+          ${canEdit ? navItem('setup', 'Kỳ & Danh mục', '🗂️') : ''}
           ${navItem('reference', 'Tra cứu chuyên đề', '🔎')}
           ${navItem('guide', 'Hướng dẫn', '❔')}
         </nav>
@@ -417,28 +443,8 @@ function render() {
         </div>
       </aside>
 
-      <div class="flex-1 min-w-0 ml-60">
-        <div class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-end flex-wrap gap-2 sticky top-0 z-10">
-          ${canEdit ? `<input type="file" id="import-file" accept=".xlsx,.xls" class="hidden" />
-          <button id="btn-import" class="bg-blue-900 hover:bg-blue-800 text-white rounded-md px-3 py-2 text-sm font-medium">Import Excel</button>` : ''}
-          <button id="btn-export" class="border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-md px-3 py-2 text-sm font-medium">Export Excel</button>
-          <div class="relative">
-            <button id="btn-change-pw" class="border border-slate-300 text-slate-700 rounded-md px-3 py-2 text-sm font-medium hover:bg-slate-50">Đổi mật khẩu</button>
-            ${state.showPwBox ? `
-              <div class="absolute right-0 mt-2 bg-white text-slate-800 rounded-md shadow-lg border border-slate-200 p-3 w-64 z-20">
-                <label class="text-xs text-slate-500">Mật khẩu mới (tối thiểu 6 ký tự)</label>
-                <input id="pw-new" type="password" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
-                <label class="text-xs text-slate-500 mt-2 block">Nhập lại mật khẩu mới</label>
-                <input id="pw-confirm" type="password" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" />
-                ${state.pwMsg ? `<div class="text-xs mt-2 ${state.pwMsg.ok ? 'text-emerald-600' : 'text-red-600'}">${escapeHtml(state.pwMsg.text)}</div>` : ''}
-                <button id="btn-pw-submit" class="mt-2 w-full bg-blue-900 text-white rounded py-1.5 text-sm font-medium hover:bg-blue-800">Đổi mật khẩu</button>
-              </div>` : ''}
-          </div>
-          <button id="btn-logout" class="border border-slate-300 text-slate-700 rounded-md px-3 py-2 text-sm font-medium hover:bg-slate-50">Đăng xuất</button>
-        </div>
-        <div id="import-msg"></div>
-        <div class="max-w-7xl mx-auto px-6 py-6" id="tab-content"></div>
-      </div>
+      <div id="import-msg"></div>
+      <div class="max-w-7xl mx-auto px-6 py-6" id="tab-content"></div>
     </div>
   `;
   document.getElementById('btn-logout').onclick = async () => { await logout(); };
@@ -448,7 +454,10 @@ function render() {
   if (pwSubmitBtn) pwSubmitBtn.onclick = handleChangePassword;
   if (canEdit) document.getElementById('btn-import').onclick = () => document.getElementById('import-file').click();
   if (canEdit) document.getElementById('import-file').addEventListener('change', handleImport);
-  document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { state.tab = b.dataset.tab; render(); });
+  document.getElementById('btn-toggle-sidebar').onclick = () => { state.sidebarOpen = !state.sidebarOpen; render(); };
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (backdrop) backdrop.onclick = () => { state.sidebarOpen = false; render(); };
+  document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { state.tab = b.dataset.tab; state.sidebarOpen = false; render(); });
   renderTab();
 }
 
@@ -768,8 +777,8 @@ function lineRow(l, canEdit) {
       <td class="px-2 py-1"><input ${dis} type="text" data-field="individual" value="${escapeHtml(l.individual || '')}" class="border border-slate-200 rounded px-1 py-1 w-32" /></td>
       <td class="px-2 py-1"><input ${dis} type="text" data-field="department" value="${escapeHtml(l.department || '')}" class="border border-slate-200 rounded px-1 py-1 w-28" /></td>
       <td class="px-2 py-1"><input ${dis} type="text" inputmode="numeric" data-field="cost" value="${fmtVND(l.cost || 0)}" class="border border-slate-200 rounded px-1 py-1 w-28 text-right" /></td>
-      <td class="px-2 py-1"><input ${dis} type="text" data-field="service" value="${escapeHtml(l.service || '')}" class="border border-slate-200 rounded px-1 py-1 w-36" /></td>
-      <td class="px-2 py-1"><input ${dis} type="text" data-field="error_desc" value="${escapeHtml(l.error_desc || '')}" class="border border-slate-200 rounded px-1 py-1 w-40" /></td>
+      <td class="px-2 py-1"><textarea ${dis} rows="2" data-field="service" class="border border-slate-200 rounded px-1 py-1 w-36 align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.service || '')}</textarea></td>
+      <td class="px-2 py-1"><textarea ${dis} rows="2" data-field="error_desc" class="border border-slate-200 rounded px-1 py-1 w-40 align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.error_desc || '')}</textarea></td>
       <td class="px-2 py-1"><input ${dis} type="text" data-field="code" value="${escapeHtml(l.code || '')}" class="border border-slate-200 rounded px-1 py-1 w-24 font-mono" /></td>
       <td class="px-2 py-1"><select ${dis} data-field="cause" class="border border-slate-200 rounded px-1 py-1 w-24"><option value="">—</option>${CAUSE_OPTIONS.map((c) => `<option ${c === l.cause ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
       <td class="px-2 py-1"><input ${dis} type="text" list="remediator-list" data-field="remediator" value="${escapeHtml(l.remediator || '')}" class="border border-slate-200 rounded px-1 py-1 w-32" /></td>
