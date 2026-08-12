@@ -828,13 +828,13 @@ function lineRow(l, canEdit) {
   const dis = canEdit ? '' : 'disabled';
   return `
     <tr class="border-t border-slate-100 hover:bg-slate-50" data-id="${l.id}">
-      <td class="px-2 py-1"><select ${dis} data-field="quarter" class="border border-slate-200 rounded px-1 py-1 w-16">${QUARTERS.map((q) => `<option ${q === l.quarter ? 'selected' : ''}>${q}</option>`).join('')}</select></td>
-      <td class="px-2 py-1"><input ${dis} type="number" data-field="year" value="${l.year}" class="border border-slate-200 rounded px-1 py-1 w-20" /></td>
+      <td class="px-2 py-1"><select ${dis} data-field="quarter" class="border border-slate-200 rounded px-1 py-1 w-12 text-xs">${QUARTERS.map((q) => `<option ${q === l.quarter ? 'selected' : ''}>${q}</option>`).join('')}</select></td>
+      <td class="px-2 py-1"><input ${dis} type="number" data-field="year" value="${l.year}" class="border border-slate-200 rounded px-1 py-1 w-16 text-xs" /></td>
       <td class="px-2 py-1"><input ${dis} type="text" data-field="individual" value="${escapeHtml(l.individual || '')}" class="border border-slate-200 rounded px-1 py-1 w-32" /></td>
-      <td class="px-2 py-1"><input ${dis} type="text" data-field="department" value="${escapeHtml(l.department || '')}" class="border border-slate-200 rounded px-1 py-1 w-28" /></td>
+      <td class="px-2 py-1"><input ${dis} type="text" data-field="department" value="${escapeHtml(l.department || '')}" class="border border-slate-200 rounded px-1 py-1 w-20 text-xs" /></td>
       <td class="px-2 py-1"><input ${dis} type="text" inputmode="numeric" data-field="cost" value="${fmtVND(l.cost || 0)}" class="border border-slate-200 rounded px-1 py-1 w-28 text-right" /></td>
-      <td class="px-2 py-1"><textarea ${dis} rows="2" data-field="service" class="border border-slate-200 rounded px-1 py-1 w-36 align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.service || '')}</textarea></td>
-      <td class="px-2 py-1"><textarea ${dis} rows="2" data-field="error_desc" class="border border-slate-200 rounded px-1 py-1 w-40 align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.error_desc || '')}</textarea></td>
+      <td class="px-2 py-1"><textarea ${dis} rows="2" data-field="service" class="border border-slate-200 rounded px-1 py-1 w-64 align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.service || '')}</textarea></td>
+      <td class="px-2 py-1"><textarea ${dis} rows="2" data-field="error_desc" class="border border-slate-200 rounded px-1 py-1 w-72 align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.error_desc || '')}</textarea></td>
       <td class="px-2 py-1"><input ${dis} type="text" data-field="code" value="${escapeHtml(l.code || '')}" class="border border-slate-200 rounded px-1 py-1 w-24 font-mono" /></td>
       <td class="px-2 py-1"><select ${dis} data-field="cause" class="border border-slate-200 rounded px-1 py-1 w-24"><option value="">—</option>${CAUSE_OPTIONS.map((c) => `<option ${c === l.cause ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
       <td class="px-2 py-1"><input ${dis} type="text" list="remediator-list" data-field="remediator" value="${escapeHtml(l.remediator || '')}" class="border border-slate-200 rounded px-1 py-1 w-32" /></td>
@@ -977,9 +977,9 @@ function riskHTML() {
             <tr class="border-t border-slate-100 ${rowBg[r.level]}">
               <td class="px-3 py-2 font-mono text-xs">${escapeHtml(r.code)}</td>
               <td class="px-3 py-2">${escapeHtml(r.name)}</td>
-              <td class="px-3 py-2 text-center">${lightMap[r.moneyZone]} ${fmtVND(r.cost)} đ</td>
-              <td class="px-3 py-2 text-center">${lightMap[r.causeZone]} ${(r.caNhanRatio * 100).toFixed(0)}%</td>
-              <td class="px-3 py-2 text-center">${lightMap[r.countZone]} ${r.lines}</td>
+              <td class="px-3 py-2 text-center"><div class="text-base leading-tight">${lightMap[r.moneyZone]}</div><div class="text-xs text-slate-600 mt-0.5 whitespace-nowrap">${fmtVND(r.cost)} đ</div></td>
+              <td class="px-3 py-2 text-center"><div class="text-base leading-tight">${lightMap[r.causeZone]}</div><div class="text-xs text-slate-600 mt-0.5">${(r.caNhanRatio * 100).toFixed(0)}%</div></td>
+              <td class="px-3 py-2 text-center"><div class="text-base leading-tight">${lightMap[r.countZone]}</div><div class="text-xs text-slate-600 mt-0.5">${r.lines}</div></td>
               <td class="px-3 py-2 text-center font-semibold">${r.redCount}</td>
               <td class="px-3 py-2 text-center text-lg">${lightMap[r.level]}</td>
               <td class="px-3 py-2">${r.label}</td>
