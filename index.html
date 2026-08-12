@@ -87,6 +87,7 @@ let state = {
   refSearch: '', refGroup: 'ALL', refSource: 'ALL', refExpanded: new Set(), refAdding: false, refEditingId: null,
   showPwBox: false, pwMsg: null, sidebarOpen: false,
   rateChartRef: null, costRevenueChartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
+  topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null,
 };
 
 // ---------------------------------------------------------------
@@ -485,6 +486,7 @@ function renderTab() {
   el.innerHTML = banner + content;
   attachTabEvents();
   if (state.tab === 'overview') drawAllOverviewCharts();
+  if (state.tab === 'heatmap') drawHeatmapTopCharts(state._heatmapTop10 || []);
 }
 
 // ---------------------------------------------------------------
@@ -539,6 +541,7 @@ function overviewHTML() {
   const st = scopedTotals();
   const cats = categorySummaries();
   const topRepeated = [...cats].filter((c) => c.quarterCount > 0).sort((a, b) => b.quarterCount - a.quarterCount).slice(0, 10);
+  state._topRepeatedCat = topRepeated;
   const { current, previous } = currentAndPreviousPeriod();
   const trendPct = (previous && previous.finalizedCost) ? ((current.finalizedCost - previous.finalizedCost) / previous.finalizedCost) * 100 : null;
   const alerts = currentPeriodAlerts();
@@ -618,7 +621,7 @@ function overviewHTML() {
 
     <div class="bg-white border border-slate-200 rounded-lg p-4">
       <h3 class="text-sm font-semibold text-slate-700 mb-3">Chuyên đề lặp lại nhiều nhất (tất cả các kỳ)</h3>
-      ${simpleTable(['Mã', 'Tên', 'Số quý'], topRepeated.map((c) => [c.code, c.name, c.quarterCount]))}
+      ${topRepeated.length === 0 ? '<div class="text-sm text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `<div style="height:${Math.max(180, topRepeated.length * 34)}px"><canvas id="top-repeated-cat-chart"></canvas></div>`}
     </div>
   `;
 }
@@ -713,7 +716,22 @@ function drawParetoCharts() {
     } },
   });
 }
-function drawAllOverviewCharts() { drawRateChart(); drawCostRevenueChart(); drawTrendChart(); drawParetoCharts(); }
+function drawTopRepeatedCatChart() {
+  const ctx = document.getElementById('top-repeated-cat-chart');
+  if (state.topRepeatedCatChartRef) { state.topRepeatedCatChartRef.destroy(); state.topRepeatedCatChartRef = null; }
+  const rows = state._topRepeatedCat || [];
+  if (!ctx || rows.length === 0) return;
+  state.topRepeatedCatChartRef = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: rows.map((c) => `${c.code} — ${c.name || ''}`), datasets: [
+      { label: 'Số quý xuất hiện', data: rows.map((c) => c.quarterCount), backgroundColor: '#1e3a8a',
+        datalabels: { anchor: 'end', align: 'end', color: '#1e3a8a', font: { weight: 'bold', size: 10 } } },
+    ] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 24 } },
+      scales: { x: { title: { display: true, text: 'số quý' } } }, plugins: { legend: { display: false } } },
+  });
+}
+function drawAllOverviewCharts() { drawRateChart(); drawCostRevenueChart(); drawTrendChart(); drawParetoCharts(); drawTopRepeatedCatChart(); }
 
 // ---------------------------------------------------------------
 // DETAILS TAB (editable lines table)
@@ -801,6 +819,7 @@ function heatmapHTML() {
   const { entities, axisLabels } = heatmapData(state.heatmapMode, state.heatmapAxis, state.heatmapMetric, state.heatmapCause);
   const max = Math.max(1, ...entities.flatMap((e) => e.values));
   const top10 = entities.slice(0, 10);
+  state._heatmapTop10 = top10;
 
   return `
     <div class="bg-white border border-slate-200 rounded-lg p-3 mb-4 flex flex-wrap items-center gap-3">
@@ -846,14 +865,44 @@ function heatmapHTML() {
     <div class="grid md:grid-cols-2 gap-6">
       <div class="bg-white border border-slate-200 rounded-lg p-4">
         <h3 class="text-sm font-semibold text-slate-700 mb-3">Top 10 ${state.heatmapMode === 'department' ? 'Khoa' : 'Cá nhân'} — lặp lại nhiều quý nhất</h3>
-        ${simpleTable(['Tên', 'Số quý xuất hiện'], [...top10].sort((a, b) => b.quarterCount - a.quarterCount).slice(0, 10).map((e) => [escapeHtml(e.entity), e.quarterCount]))}
+        ${top10.length === 0 ? '<div class="text-sm text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `<div style="height:${Math.max(180, top10.length * 34)}px"><canvas id="top-repeat-chart"></canvas></div>`}
       </div>
       <div class="bg-white border border-slate-200 rounded-lg p-4">
         <h3 class="text-sm font-semibold text-slate-700 mb-3">Top 10 ${state.heatmapMode === 'department' ? 'Khoa' : 'Cá nhân'} — chi phí cao nhất</h3>
-        ${simpleTable(['Tên', 'Tổng chi phí (đ)'], top10.map((e) => [escapeHtml(e.entity), fmtVND(e.total)]))}
+        ${top10.length === 0 ? '<div class="text-sm text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `<div style="height:${Math.max(180, top10.length * 34)}px"><canvas id="top-cost-chart"></canvas></div>`}
       </div>
     </div>
   `;
+}
+
+function drawHeatmapTopCharts(top10) {
+  const repeatCtx = document.getElementById('top-repeat-chart');
+  if (state.topRepeatChartRef) { state.topRepeatChartRef.destroy(); state.topRepeatChartRef = null; }
+  if (repeatCtx && top10.length) {
+    const sorted = [...top10].sort((a, b) => b.quarterCount - a.quarterCount).slice(0, 10);
+    state.topRepeatChartRef = new Chart(repeatCtx, {
+      type: 'bar',
+      data: { labels: sorted.map((e) => e.entity), datasets: [
+        { label: 'Số quý xuất hiện', data: sorted.map((e) => e.quarterCount), backgroundColor: '#1e3a8a',
+          datalabels: { anchor: 'end', align: 'end', color: '#1e3a8a', font: { weight: 'bold', size: 10 } } },
+      ] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 24 } },
+        scales: { x: { title: { display: true, text: 'số quý' } } }, plugins: { legend: { display: false } } },
+    });
+  }
+  const costCtx = document.getElementById('top-cost-chart');
+  if (state.topCostChartRef) { state.topCostChartRef.destroy(); state.topCostChartRef = null; }
+  if (costCtx && top10.length) {
+    state.topCostChartRef = new Chart(costCtx, {
+      type: 'bar',
+      data: { labels: top10.map((e) => e.entity), datasets: [
+        { label: 'Tổng chi phí (đ)', data: top10.map((e) => e.total), backgroundColor: '#dc2626',
+          datalabels: { anchor: 'end', align: 'end', color: '#dc2626', font: { weight: 'bold', size: 10 }, formatter: (v) => fmtVND(v) } },
+      ] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 70 } },
+        scales: { x: { title: { display: true, text: 'đ' }, ticks: { callback: (v) => fmtVND(v) } } }, plugins: { legend: { display: false } } },
+    });
+  }
 }
 
 // ---------------------------------------------------------------
