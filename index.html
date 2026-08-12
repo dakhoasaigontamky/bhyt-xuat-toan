@@ -7,6 +7,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -25,6 +26,7 @@
 
 <script>
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+if (window.Chart && window.ChartDataLabels) { Chart.register(ChartDataLabels); }
 const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
 const QUARTER_VN = { Q1: 'Quý I', Q2: 'Quý II', Q3: 'Quý III', Q4: 'Quý IV' };
 const CAUSE_OPTIONS = ['Cá nhân', 'Hệ thống'];
@@ -84,7 +86,7 @@ let state = {
   riskQuarterKey: null,
   refSearch: '', refGroup: 'ALL', refSource: 'ALL', refExpanded: new Set(), refAdding: false, refEditingId: null,
   showPwBox: false, pwMsg: null,
-  chartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
+  rateChartRef: null, costRevenueChartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
 };
 
 // ---------------------------------------------------------------
@@ -352,13 +354,11 @@ function heatmapData(mode, axis, metric, cause) {
 // ---------------------------------------------------------------
 function zoneForMoney(cost) {
   if (cost === 0) return 'green';
-  if (cost <= 5000000) return 'yellow';
+  if (cost <= 2000000) return 'yellow';
   return 'red';
 }
 function zoneForCause(caNhanRatio) {
-  if (caNhanRatio === 0) return 'green';
-  if (caNhanRatio === 1) return 'red';
-  return 'yellow';
+  return caNhanRatio > 0 ? 'red' : 'green';
 }
 function zoneForCount(n) {
   if (n <= 5) return 'green';
@@ -404,8 +404,8 @@ function render() {
         </div>
         <nav class="flex-1 py-3 overflow-y-auto">
           ${navItem('overview', 'Tổng quan', '📊')}
-          ${navItem('details', 'Chi tiết xuất toán', '📋')}
-          ${navItem('heatmap', 'Khoa & Cá nhân', '🗺️')}
+          ${navItem('details', 'Tra cứu theo kì xuất toán', '📋')}
+          ${navItem('heatmap', 'Tra cứu theo khoa và cá nhân', '🗺️')}
           ${navItem('risk', 'Risk Score', '🚦')}
           ${navItem('setup', 'Kỳ & Danh mục', '🗂️')}
           ${navItem('reference', 'Tra cứu chuyên đề', '🔎')}
@@ -463,7 +463,7 @@ function renderTab() {
   const el = document.getElementById('tab-content');
   let banner = '';
   if (state.lines.length === 0 && state.periods.length === 0 && !['guide', 'reference', 'setup'].includes(state.tab)) {
-    banner = `<div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-4 text-sm">Chưa có dữ liệu. Import file Excel hoặc thêm dữ liệu ở tab "Kỳ & Danh mục" / "Chi tiết xuất toán".</div>`;
+    banner = `<div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-4 text-sm">Chưa có dữ liệu. Import file Excel hoặc thêm dữ liệu ở tab "Kỳ & Danh mục" / "Tra cứu theo kì xuất toán".</div>`;
   }
   let content = '';
   if (state.tab === 'overview') content = overviewHTML();
@@ -577,9 +577,15 @@ function overviewHTML() {
       ${statCard('Mục tiêu ≤ ' + fmtPct(TARGET_RATE), vsTarget === null ? '—' : (vsTarget > 0 ? `Cao hơn ${vsTarget.toFixed(2)}%` : `Thấp hơn ${Math.abs(vsTarget).toFixed(2)}%`), vsTarget === null ? 'slate' : (vsTarget > 0 ? 'red' : 'emerald'))}
     </div>
 
-    <div class="bg-white border border-slate-200 rounded-lg p-3 mb-4">
-      <h3 class="text-sm font-semibold text-slate-700 mb-2">Chi phí xuất toán &amp; tỉ lệ theo quý</h3>
-      <div style="height:160px"><canvas id="quarter-chart"></canvas></div>
+    <div class="grid md:grid-cols-2 gap-4 mb-6">
+      <div class="bg-white border border-slate-200 rounded-lg p-3">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ xuất toán theo quý</h3>
+        <div style="height:180px"><canvas id="rate-chart"></canvas></div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-3">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Chi phí xuất toán &amp; Doanh thu BHYT theo quý</h3>
+        <div style="height:180px"><canvas id="cost-revenue-chart"></canvas></div>
+      </div>
     </div>
 
     <div class="bg-white border border-slate-200 rounded-lg p-4 mb-6">
@@ -608,25 +614,52 @@ function overviewHTML() {
   `;
 }
 
-function drawChart() {
+function drawRateChart() {
   const qs = quarterSummaries();
-  if (qs.length === 0) return;
-  const ctx = document.getElementById('quarter-chart');
+  const ctx = document.getElementById('rate-chart');
   if (!ctx) return;
-  if (state.chartRef) state.chartRef.destroy();
-  state.chartRef = new Chart(ctx, {
+  if (state.rateChartRef) state.rateChartRef.destroy();
+  if (qs.length === 0) return;
+  state.rateChartRef = new Chart(ctx, {
+    type: 'line',
     data: {
       labels: qs.map((q) => q.label),
       datasets: [
-        { type: 'bar', label: 'Chi phí xuất toán (tr đ)', data: qs.map((q) => Math.round(q.finalizedCost / 1e6)), backgroundColor: '#dc2626', yAxisID: 'y' },
-        { type: 'bar', label: 'Doanh thu (tr đ)', data: qs.map((q) => Math.round(q.revenue / 1e6)), backgroundColor: '#cbd5e1', yAxisID: 'y' },
-        { type: 'line', label: 'Tỉ lệ xuất toán (%)', data: qs.map((q) => q.rateVsRevenue !== null ? +(q.rateVsRevenue * 100).toFixed(2) : 0), borderColor: '#1e3a8a', yAxisID: 'y1', tension: 0.3 },
+        { label: 'Tỉ lệ xuất toán (%)', data: qs.map((q) => q.rateVsRevenue !== null ? +(q.rateVsRevenue * 100).toFixed(2) : null), borderColor: '#1e3a8a', backgroundColor: '#1e3a8a', tension: 0.3,
+          datalabels: { align: 'top', color: '#1e3a8a', font: { weight: 'bold', size: 10 }, formatter: (v) => v === null ? '' : v + '%' } },
       ],
     },
-    options: { responsive: true, maintainAspectRatio: false, scales: {
-      y: { position: 'left', title: { display: true, text: 'triệu đ' } },
-      y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '%' } },
-    } },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 16 } },
+      scales: { y: { title: { display: true, text: '%' } } },
+      plugins: { datalabels: {} },
+    },
+  });
+}
+function drawCostRevenueChart() {
+  const qs = quarterSummaries();
+  const ctx = document.getElementById('cost-revenue-chart');
+  if (!ctx) return;
+  if (state.costRevenueChartRef) state.costRevenueChartRef.destroy();
+  if (qs.length === 0) return;
+  state.costRevenueChartRef = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: qs.map((q) => q.label),
+      datasets: [
+        { label: 'Chi phí xuất toán (tr đ)', data: qs.map((q) => Math.round(q.finalizedCost / 1e6)), backgroundColor: '#dc2626',
+          datalabels: { anchor: 'end', align: 'top', color: '#dc2626', font: { weight: 'bold', size: 10 } } },
+        { label: 'Doanh thu BHYT (tr đ)', data: qs.map((q) => Math.round(q.revenue / 1e6)), backgroundColor: '#94a3b8',
+          datalabels: { anchor: 'end', align: 'top', color: '#64748b', font: { weight: 'bold', size: 10 } } },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 16 } },
+      scales: { y: { title: { display: true, text: 'triệu đ' } } },
+      plugins: { datalabels: { formatter: (v) => v.toLocaleString('vi-VN') } },
+    },
   });
 }
 function drawTrendChart() {
@@ -640,10 +673,13 @@ function drawTrendChart() {
   state.trendChartRef = new Chart(ctx, {
     type: 'bar',
     data: { labels: groups, datasets: [
-      { label: `${previous.label} (tr đ)`, data: groups.map((g) => Math.round((prevTotals[g] || 0) / 1e6)), backgroundColor: '#cbd5e1' },
-      { label: `${current.label} (tr đ)`, data: groups.map((g) => Math.round((curTotals[g] || 0) / 1e6)), backgroundColor: '#dc2626' },
+      { label: `${previous.label} (tr đ)`, data: groups.map((g) => Math.round((prevTotals[g] || 0) / 1e6)), backgroundColor: '#cbd5e1',
+        datalabels: { anchor: 'end', align: 'top', color: '#64748b', font: { weight: 'bold', size: 10 } } },
+      { label: `${current.label} (tr đ)`, data: groups.map((g) => Math.round((curTotals[g] || 0) / 1e6)), backgroundColor: '#dc2626',
+        datalabels: { anchor: 'end', align: 'top', color: '#dc2626', font: { weight: 'bold', size: 10 } } },
     ] },
-    options: { responsive: true, maintainAspectRatio: false, scales: { y: { title: { display: true, text: 'triệu đ' } } } },
+    options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 16 } },
+      scales: { y: { title: { display: true, text: 'triệu đ' } } } },
   });
 }
 function drawParetoCharts() {
@@ -656,17 +692,19 @@ function drawParetoCharts() {
     data: {
       labels: data.map((d) => d.code),
       datasets: [
-        { type: 'bar', label: 'triệu đ', data: data.map((d) => Math.round(d.value / 1e6)), backgroundColor: '#dc2626', yAxisID: 'y' },
-        { type: 'line', label: '% luỹ kế', data: data.map((d) => +d.cumPct.toFixed(1)), borderColor: '#f59e0b', yAxisID: 'y1', tension: 0.2 },
+        { type: 'bar', label: 'triệu đ', data: data.map((d) => Math.round(d.value / 1e6)), backgroundColor: '#dc2626', yAxisID: 'y',
+          datalabels: { anchor: 'end', align: 'top', color: '#dc2626', font: { weight: 'bold', size: 10 } } },
+        { type: 'line', label: '% luỹ kế', data: data.map((d) => +d.cumPct.toFixed(1)), borderColor: '#f59e0b', yAxisID: 'y1', tension: 0.2,
+          datalabels: { align: 'top', color: '#b45309', font: { weight: 'bold', size: 10 }, formatter: (v) => v + '%' } },
       ],
     },
-    options: { responsive: true, maintainAspectRatio: false, scales: {
+    options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 16 } }, scales: {
       y: { position: 'left', title: { display: true, text: 'triệu đ' } },
       y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: '% luỹ kế' } },
     } },
   });
 }
-function drawAllOverviewCharts() { drawChart(); drawTrendChart(); drawParetoCharts(); }
+function drawAllOverviewCharts() { drawRateChart(); drawCostRevenueChart(); drawTrendChart(); drawParetoCharts(); }
 
 // ---------------------------------------------------------------
 // DETAILS TAB (editable lines table)
@@ -858,8 +896,8 @@ function riskHTML() {
       <span>🔴 2-3 vùng đỏ: Can thiệp ngay</span><span>🟡 1 vùng đỏ: Xem xét can thiệp</span><span>🟢 0 vùng đỏ: Theo dõi</span>
     </div>
     <div class="text-xs text-slate-400 mt-2">
-      Tiêu chí: Giá trị xuất toán (=0 xanh · ≤5.000.000 vàng · &gt;5.000.000 đỏ) —
-      Tỉ lệ lỗi cá nhân (0% xanh · 100% đỏ · còn lại vàng) —
+      Tiêu chí: Giá trị xuất toán (=0 xanh · ≤2.000.000 vàng · &gt;2.000.000 đỏ) —
+      Tỉ lệ lỗi cá nhân (0% xanh · còn lại (có lỗi cá nhân) đỏ) —
       Số hồ sơ (≤5 xanh · 6-10 vàng · &gt;10 đỏ)
     </div>
   `;
@@ -1033,8 +1071,8 @@ function guideHTML() {
       ])}
       ${guideSection('2. Các tab', [
         '<b>Tổng quan</b>: cảnh báo chuyên đề mới/lặp lại, thẻ số liệu, xu hướng theo quý, Pareto chi phí — có bộ lọc Năm/Kỳ/Khoa/Người/Nhóm lỗi.',
-        '<b>Chi tiết xuất toán</b>: bảng nhập liệu chính, import/export Excel.',
-        '<b>Khoa & Cá nhân</b>: heatmap khoa/cá nhân theo Quý hoặc theo Chuyên đề, xem theo chi phí hoặc số lượt.',
+        '<b>Tra cứu theo kì xuất toán</b>: bảng nhập liệu chính, import/export Excel.',
+        '<b>Tra cứu theo khoa và cá nhân</b>: heatmap khoa/cá nhân theo Quý hoặc theo Chuyên đề, xem theo chi phí hoặc số lượt.',
         '<b>Risk Score</b>: điểm rủi ro từng chuyên đề trong 1 kỳ, kèm đèn giao thông 🔴🟡🟢.',
         '<b>Kỳ & Danh mục</b>: doanh thu BHYT theo quý, và map mã Phụ lục → Nhóm.',
         '<b>Tra cứu chuyên đề</b>: cơ sở pháp lý/thanh toán/quy tắc giám định, có thể thêm chuyên đề DKTK tự phát hiện.',
