@@ -639,6 +639,26 @@ function overviewHTML() {
   `;
 }
 
+// Điều hướng khi bấm vào biểu đồ: sang tab Chi tiết, lọc theo đúng giá trị đã bấm
+function goToDetailsWithSearch(term) {
+  state.tab = 'details';
+  state.detailsSearch = term;
+  state.quarterFilter = 'ALL';
+  render();
+}
+function setNhomFilterAndStay(nhom) {
+  state.filterNhom = nhom;
+  renderTab();
+}
+function setQuarterFilterAndStay(quarter, year) {
+  state.dashQuarter = quarter;
+  state.dashYear = String(year);
+  renderTab();
+}
+function onHoverPointer(evt, elements) {
+  evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+}
+
 function drawRateChart() {
   const qs = quarterSummaries();
   const ctx = document.getElementById('rate-chart');
@@ -659,6 +679,8 @@ function drawRateChart() {
       layout: { padding: { top: 16 } },
       scales: { y: { title: { display: true, text: '%' } } },
       plugins: { datalabels: {} },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) { const q = qs[elements[0].index]; setQuarterFilterAndStay(q.quarter, q.year); } },
     },
   });
 }
@@ -684,6 +706,8 @@ function drawCostRevenueChart() {
       layout: { padding: { top: 16 } },
       scales: { y: { title: { display: true, text: 'triệu đ' } } },
       plugins: { datalabels: { formatter: (v) => v.toLocaleString('vi-VN') } },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) { const q = qs[elements[0].index]; setQuarterFilterAndStay(q.quarter, q.year); } },
     },
   });
 }
@@ -704,7 +728,9 @@ function drawTrendChart() {
         datalabels: { anchor: 'end', align: 'top', color: '#dc2626', font: { weight: 'bold', size: 10 } } },
     ] },
     options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 16 } },
-      scales: { y: { title: { display: true, text: 'triệu đ' } } } },
+      scales: { y: { title: { display: true, text: 'triệu đ' } } },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) setNhomFilterAndStay(groups[elements[0].index]); } },
   });
 }
 function drawParetoCharts() {
@@ -726,7 +752,10 @@ function drawParetoCharts() {
     options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 16 } }, scales: {
       y: { position: 'left', title: { display: true, text: 'triệu đ' } },
       y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: '% luỹ kế' } },
-    } },
+    },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) goToDetailsWithSearch(data[elements[0].index].code); },
+    },
   });
 }
 function drawTopRepeatedCatChart() {
@@ -741,7 +770,10 @@ function drawTopRepeatedCatChart() {
         datalabels: { anchor: 'end', align: 'end', color: '#1e3a8a', font: { weight: 'bold', size: 10 } } },
     ] },
     options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 24 } },
-      scales: { x: { title: { display: true, text: 'số quý' } } }, plugins: { legend: { display: false } } },
+      scales: { x: { title: { display: true, text: 'số quý' } } }, plugins: { legend: { display: false } },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) goToDetailsWithSearch(rows[elements[0].index].code); },
+    },
   });
 }
 function drawGroupCostChart() {
@@ -766,6 +798,8 @@ function drawGroupCostChart() {
           formatter: (v) => total ? ((v / total) * 100).toFixed(1) + '%' : '',
         },
       },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) setNhomFilterAndStay(labels[elements[0].index]); },
     },
   });
 }
@@ -925,7 +959,10 @@ function drawHeatmapTopCharts(top10) {
           datalabels: { anchor: 'end', align: 'end', color: '#1e3a8a', font: { weight: 'bold', size: 10 } } },
       ] },
       options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 24 } },
-        scales: { x: { title: { display: true, text: 'số quý' } } }, plugins: { legend: { display: false } } },
+        scales: { x: { title: { display: true, text: 'số quý' } } }, plugins: { legend: { display: false } },
+        onHover: onHoverPointer,
+        onClick: (evt, elements) => { if (elements.length) goToDetailsWithSearch(sorted[elements[0].index].entity); },
+      },
     });
   }
   const costCtx = document.getElementById('top-cost-chart');
@@ -938,7 +975,10 @@ function drawHeatmapTopCharts(top10) {
           datalabels: { anchor: 'end', align: 'end', color: '#dc2626', font: { weight: 'bold', size: 10 }, formatter: (v) => fmtVND(v) } },
       ] },
       options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 70 } },
-        scales: { x: { title: { display: true, text: 'đ' }, ticks: { callback: (v) => fmtVND(v) } } }, plugins: { legend: { display: false } } },
+        scales: { x: { title: { display: true, text: 'đ' }, ticks: { callback: (v) => fmtVND(v) } } }, plugins: { legend: { display: false } },
+        onHover: onHoverPointer,
+        onClick: (evt, elements) => { if (elements.length) goToDetailsWithSearch(top10[elements[0].index].entity); },
+      },
     });
   }
 }
