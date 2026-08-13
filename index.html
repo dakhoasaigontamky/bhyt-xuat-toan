@@ -28,6 +28,20 @@
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 if (window.Chart && window.ChartDataLabels) { Chart.register(ChartDataLabels); }
 const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
+// So sánh 2 giá trị "Kì" để sắp xếp: Q1-Q4 theo đúng thứ tự, các kì tự đặt (thanh tra, kiểm toán đột xuất...) xếp sau, theo alphabet
+function compareKi(a, b) {
+  const ia = QUARTERS.indexOf(a), ib = QUARTERS.indexOf(b);
+  if (ia >= 0 && ib >= 0) return ia - ib;
+  if (ia >= 0) return -1;
+  if (ib >= 0) return 1;
+  return String(a || '').localeCompare(String(b || ''), 'vi');
+}
+function allKiValues() {
+  const set = new Set(QUARTERS);
+  state.periods.forEach((p) => set.add(p.quarter));
+  state.lines.forEach((l) => set.add(l.quarter));
+  return Array.from(set).filter(Boolean).sort(compareKi);
+}
 const QUARTER_VN = { Q1: 'Quý I', Q2: 'Quý II', Q3: 'Quý III', Q4: 'Quý IV' };
 const CAUSE_OPTIONS = ['Cá nhân', 'Hệ thống'];
 const TARGET_RATE = 0.005; // mục tiêu tỉ lệ xuất toán ≤ 0.5%
@@ -193,7 +207,7 @@ function quarterList() {
     if (!map.has(k)) map.set(k, { quarter: l.quarter, year: l.year, revenue: 0 }); // có dữ liệu nhưng chưa nhập doanh thu — vẫn hiển thị, doanh thu tạm để 0
   });
   return Array.from(map.values()).map((v) => ({ ...v, key: qKey(v.quarter, v.year) }))
-    .sort((a, b) => a.year - b.year || QUARTERS.indexOf(a.quarter) - QUARTERS.indexOf(b.quarter));
+    .sort((a, b) => a.year - b.year || compareKi(a.quarter, b.quarter));
 }
 function quarterSummaries() {
   const qs = quarterList();
@@ -564,8 +578,8 @@ function overviewHTML() {
         ${years.map((y) => `<option value="${y}" ${String(state.dashYear) === String(y) ? 'selected' : ''}>Năm ${y}</option>`).join('')}
       </select>
       <select id="dash-quarter" class="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
-        <option value="ALL" ${state.dashQuarter === 'ALL' ? 'selected' : ''}>Tất cả các kỳ</option>
-        ${QUARTERS.map((q) => `<option value="${q}" ${state.dashQuarter === q ? 'selected' : ''}>${q}</option>`).join('')}
+        <option value="ALL" ${state.dashQuarter === 'ALL' ? 'selected' : ''}>Tất cả các kì</option>
+        ${allKiValues().map((q) => `<option value="${escapeHtml(q)}" ${state.dashQuarter === q ? 'selected' : ''}>${escapeHtml(q)}</option>`).join('')}
       </select>
       <select id="filter-khoa" class="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
         <option value="ALL">Khoa: Tất cả</option>
@@ -599,11 +613,11 @@ function overviewHTML() {
 
     <div class="grid md:grid-cols-2 gap-4 mb-6">
       <div class="bg-white border border-slate-200 rounded-lg p-3">
-        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ xuất toán theo quý</h3>
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ xuất toán theo kì</h3>
         <div style="height:180px"><canvas id="rate-chart"></canvas></div>
       </div>
       <div class="bg-white border border-slate-200 rounded-lg p-3">
-        <h3 class="text-sm font-semibold text-slate-700 mb-2">Chi phí xuất toán &amp; Doanh thu BHYT theo quý</h3>
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Chi phí xuất toán &amp; Doanh thu BHYT theo kì</h3>
         <div style="height:180px"><canvas id="cost-revenue-chart"></canvas></div>
       </div>
     </div>
@@ -615,7 +629,7 @@ function overviewHTML() {
 
     <div class="bg-white border border-slate-200 rounded-lg p-4 mb-6">
       <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <h3 class="text-sm font-semibold text-slate-700">Xu hướng so với quý trước${current ? ` (${current.label}${previous ? ' so với ' + previous.label : ''})` : ''}</h3>
+        <h3 class="text-sm font-semibold text-slate-700">Xu hướng so với kì trước${current ? ` (${current.label}${previous ? ' so với ' + previous.label : ''})` : ''}</h3>
         ${trendPct !== null ? `<span class="text-sm font-semibold ${trendPct > 0 ? 'text-red-600' : trendPct < 0 ? 'text-emerald-600' : 'text-slate-500'}">${trendPct > 0 ? '▲' : trendPct < 0 ? '▼' : '—'} ${Math.abs(trendPct).toFixed(1)}% tổng chi phí xuất toán</span>` : ''}
       </div>
       ${!previous ? '<div class="text-sm text-slate-400 py-6 text-center">Chưa đủ dữ liệu 2 kỳ liên tiếp để so sánh</div>' : '<div style="height:160px"><canvas id="trend-chart"></canvas></div>'}
@@ -633,7 +647,7 @@ function overviewHTML() {
     </div>
 
     <div class="bg-white border border-slate-200 rounded-lg p-4">
-      <h3 class="text-sm font-semibold text-slate-700 mb-3">Chuyên đề lặp lại nhiều nhất (tất cả các kỳ)</h3>
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">Chuyên đề lặp lại nhiều nhất (tất cả các kì)</h3>
       ${topRepeated.length === 0 ? '<div class="text-sm text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `<div style="height:${Math.max(180, topRepeated.length * 34)}px"><canvas id="top-repeated-cat-chart"></canvas></div>`}
     </div>
   `;
@@ -824,7 +838,7 @@ function detailsHTML() {
   return `
     <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
       <div class="flex items-center gap-2 flex-wrap">
-        <label class="text-sm text-slate-600">Xem theo kỳ:</label>
+        <label class="text-sm text-slate-600">Xem theo kì:</label>
         <select id="quarter-filter" class="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
           <option value="ALL" ${state.quarterFilter === 'ALL' ? 'selected' : ''}>Tất cả (xếp theo chi phí)</option>
           ${qs.map((q) => `<option value="${q.key}" ${state.quarterFilter === q.key ? 'selected' : ''}>${q.label}</option>`).join('')}
@@ -839,14 +853,15 @@ function detailsHTML() {
     </div>
     <div class="bg-white border border-slate-200 rounded-lg overflow-x-auto">
       <datalist id="remediator-list">${remediatorList().map((n) => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
-      <table class="w-full text-sm min-w-[1200px]">
+      <datalist id="ki-datalist">${allKiValues().map((n) => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
+      <table class="w-full text-xs min-w-[980px]">
         <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
           <tr>
-            <th class="text-left px-2 py-2">Quý</th><th class="text-left px-2 py-2">Năm</th>
-            <th class="text-left px-2 py-2">Người thực hiện/CĐ</th><th class="text-left px-2 py-2">Khoa</th>
-            <th class="text-right px-2 py-2">Chi phí</th><th class="text-left px-2 py-2">Dịch vụ</th>
-            <th class="text-left px-2 py-2">Lỗi</th><th class="text-left px-2 py-2">Phụ lục</th>
-            <th class="text-left px-2 py-2">Nguyên nhân</th><th class="text-left px-2 py-2">Người khắc phục</th><th></th>
+            <th class="text-left px-1.5 py-2">Kì</th><th class="text-left px-1.5 py-2">Năm</th>
+            <th class="text-left px-1.5 py-2">Người thực hiện/CĐ</th><th class="text-left px-1.5 py-2">Khoa</th>
+            <th class="text-right px-1.5 py-2">Chi phí</th><th class="text-left px-1.5 py-2">Dịch vụ</th>
+            <th class="text-left px-1.5 py-2">Lỗi</th><th class="text-left px-1.5 py-2">Phụ lục</th>
+            <th class="text-left px-1.5 py-2">Nguyên nhân</th><th class="text-left px-1.5 py-2">Người khắc phục</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -861,18 +876,18 @@ function detailsHTML() {
 function lineRow(l, canEdit) {
   const dis = canEdit ? '' : 'disabled';
   return `
-    <tr class="border-t border-slate-100 hover:bg-slate-50" data-id="${l.id}">
-      <td class="px-2 py-1"><select ${dis} data-field="quarter" class="border border-slate-200 rounded px-1 py-1 w-12 text-xs">${QUARTERS.map((q) => `<option ${q === l.quarter ? 'selected' : ''}>${q}</option>`).join('')}</select></td>
-      <td class="px-2 py-1"><input ${dis} type="number" data-field="year" value="${l.year}" class="border border-slate-200 rounded px-1 py-1 w-16 text-xs" /></td>
-      <td class="px-2 py-1"><input ${dis} type="text" data-field="individual" value="${escapeHtml(l.individual || '')}" class="border border-slate-200 rounded px-1 py-1 w-32" /></td>
-      <td class="px-2 py-1"><input ${dis} type="text" data-field="department" value="${escapeHtml(l.department || '')}" class="border border-slate-200 rounded px-1 py-1 w-20 text-xs" /></td>
-      <td class="px-2 py-1"><input ${dis} type="text" inputmode="numeric" data-field="cost" value="${fmtVND(l.cost || 0)}" class="border border-slate-200 rounded px-1 py-1 w-28 text-right" /></td>
-      <td class="px-2 py-1"><textarea ${dis} rows="2" data-field="service" class="border border-slate-200 rounded px-1 py-1 w-64 align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.service || '')}</textarea></td>
-      <td class="px-2 py-1"><textarea ${dis} rows="2" data-field="error_desc" class="border border-slate-200 rounded px-1 py-1 w-72 align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.error_desc || '')}</textarea></td>
-      <td class="px-2 py-1"><input ${dis} type="text" data-field="code" value="${escapeHtml(l.code || '')}" class="border border-slate-200 rounded px-1 py-1 w-24 font-mono" /></td>
-      <td class="px-2 py-1"><select ${dis} data-field="cause" class="border border-slate-200 rounded px-1 py-1 w-24"><option value="">—</option>${CAUSE_OPTIONS.map((c) => `<option ${c === l.cause ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
-      <td class="px-2 py-1"><input ${dis} type="text" list="remediator-list" data-field="remediator" value="${escapeHtml(l.remediator || '')}" class="border border-slate-200 rounded px-1 py-1 w-32" /></td>
-      <td class="px-2 py-1 text-center">${canEdit ? `<button data-del-line="${l.id}" class="text-slate-400 hover:text-red-600">✕</button>` : ''}</td>
+    <tr class="border-t border-slate-100 hover:bg-slate-50 text-xs" data-id="${l.id}">
+      <td class="px-1.5 py-1"><input ${dis} type="text" list="ki-datalist" data-field="quarter" value="${escapeHtml(l.quarter)}" title="${escapeHtml(l.quarter)}" class="border border-slate-200 rounded px-1 py-1 w-20 text-xs" /></td>
+      <td class="px-1.5 py-1"><input ${dis} type="number" data-field="year" value="${l.year}" class="border border-slate-200 rounded px-1 py-1 w-14 text-xs" /></td>
+      <td class="px-1.5 py-1"><input ${dis} type="text" data-field="individual" value="${escapeHtml(l.individual || '')}" class="border border-slate-200 rounded px-1 py-1 w-24 text-xs" /></td>
+      <td class="px-1.5 py-1"><input ${dis} type="text" data-field="department" value="${escapeHtml(l.department || '')}" class="border border-slate-200 rounded px-1 py-1 w-16 text-xs" /></td>
+      <td class="px-1.5 py-1"><input ${dis} type="text" inputmode="numeric" data-field="cost" value="${fmtVND(l.cost || 0)}" class="border border-slate-200 rounded px-1 py-1 w-24 text-xs text-right" /></td>
+      <td class="px-1.5 py-1"><textarea ${dis} rows="2" data-field="service" class="border border-slate-200 rounded px-1 py-1 w-64 text-xs align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.service || '')}</textarea></td>
+      <td class="px-1.5 py-1"><textarea ${dis} rows="2" data-field="error_desc" class="border border-slate-200 rounded px-1 py-1 w-72 text-xs align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.error_desc || '')}</textarea></td>
+      <td class="px-1.5 py-1"><input ${dis} type="text" data-field="code" value="${escapeHtml(l.code || '')}" class="border border-slate-200 rounded px-1 py-1 w-20 text-xs font-mono" /></td>
+      <td class="px-1.5 py-1"><select ${dis} data-field="cause" class="border border-slate-200 rounded px-1 py-1 w-20 text-xs"><option value="">—</option>${CAUSE_OPTIONS.map((c) => `<option ${c === l.cause ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
+      <td class="px-1.5 py-1"><input ${dis} type="text" list="remediator-list" data-field="remediator" value="${escapeHtml(l.remediator || '')}" class="border border-slate-200 rounded px-1 py-1 w-24 text-xs" /></td>
+      <td class="px-1.5 py-1 text-center">${canEdit ? `<button data-del-line="${l.id}" class="text-slate-400 hover:text-red-600">✕</button>` : ''}</td>
     </tr>`;
 }
 
@@ -1048,20 +1063,21 @@ function setupHTML() {
     <div class="grid lg:grid-cols-2 gap-6">
       <div class="bg-white border border-slate-200 rounded-lg p-4">
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-slate-700">Doanh thu BHYT theo quý</h3>
-          ${canEdit ? '<button id="btn-add-period" class="text-blue-800 hover:text-blue-600 text-sm font-medium">+ Thêm kỳ</button>' : ''}
+          <h3 class="text-sm font-semibold text-slate-700">Doanh thu BHYT theo kì</h3>
+          ${canEdit ? '<button id="btn-add-period" class="text-blue-800 hover:text-blue-600 text-sm font-medium">+ Thêm kì</button>' : ''}
         </div>
+        <datalist id="ki-datalist-setup">${allKiValues().map((n) => `<option value="${escapeHtml(n)}">`).join('')}</datalist>
         <table class="w-full text-sm">
-          <thead class="text-xs text-slate-500 uppercase"><tr><th class="text-left py-1">Quý</th><th class="text-left py-1">Năm</th><th class="text-right py-1">Doanh thu (đ)</th><th></th></tr></thead>
+          <thead class="text-xs text-slate-500 uppercase"><tr><th class="text-left py-1">Kì</th><th class="text-left py-1">Năm</th><th class="text-right py-1">Doanh thu (đ)</th><th></th></tr></thead>
           <tbody>
             ${state.periods.map((p, idx) => `
               <tr class="border-t border-slate-100">
-                <td class="py-1.5"><select ${canEdit ? '' : 'disabled'} data-p-idx="${idx}" data-p-field="quarter" class="border border-slate-200 rounded px-1 py-1 w-16">${QUARTERS.map((q) => `<option ${q === p.quarter ? 'selected' : ''}>${q}</option>`).join('')}</select></td>
+                <td class="py-1.5"><input ${canEdit ? '' : 'disabled'} type="text" list="ki-datalist-setup" data-p-idx="${idx}" data-p-field="quarter" value="${escapeHtml(p.quarter)}" class="border border-slate-200 rounded px-1 py-1 w-20 text-sm" /></td>
                 <td class="py-1.5"><input ${canEdit ? '' : 'disabled'} type="number" data-p-idx="${idx}" data-p-field="year" value="${p.year}" class="border border-slate-200 rounded px-1 py-1 w-20" /></td>
                 <td class="py-1.5 text-right"><input ${canEdit ? '' : 'disabled'} type="text" inputmode="numeric" data-p-idx="${idx}" data-p-field="revenue" value="${fmtVND(p.revenue)}" class="border border-slate-200 rounded px-1 py-1 w-36 text-right" /></td>
                 <td class="py-1.5 text-center">${canEdit ? `<button data-del-period="${p.id}" class="text-slate-400 hover:text-red-600">✕</button>` : ''}</td>
               </tr>`).join('')}
-            ${state.periods.length === 0 ? '<tr><td colspan="4" class="text-center text-slate-400 py-6">Chưa có kỳ nào</td></tr>' : ''}
+            ${state.periods.length === 0 ? '<tr><td colspan="4" class="text-center text-slate-400 py-6">Chưa có kì nào</td></tr>' : ''}
           </tbody>
         </table>
       </div>
@@ -1206,11 +1222,11 @@ function guideHTML() {
         'Số hồ sơ xuất toán của 1 chuyên đề = số dòng có cùng mã Phụ lục trong 1 quý.',
       ])}
       ${guideSection('2. Các tab', [
-        '<b>Tổng quan</b>: cảnh báo chuyên đề mới/lặp lại, thẻ số liệu, xu hướng theo quý, Pareto chi phí — có bộ lọc Năm/Kỳ/Khoa/Người/Nhóm lỗi.',
+        '<b>Tổng quan</b>: cảnh báo chuyên đề mới/lặp lại, thẻ số liệu, xu hướng theo kì, Pareto chi phí — có bộ lọc Năm/Kỳ/Khoa/Người/Nhóm lỗi.',
         '<b>Tra cứu theo kì xuất toán</b>: bảng nhập liệu chính, import/export Excel.',
         '<b>Tra cứu theo khoa và cá nhân</b>: heatmap khoa/cá nhân theo Quý hoặc theo Chuyên đề, xem theo chi phí hoặc số lượt.',
         '<b>Risk Score</b>: điểm rủi ro từng chuyên đề trong 1 kỳ, kèm đèn giao thông 🔴🟡🟢.',
-        '<b>Kỳ & Danh mục</b>: doanh thu BHYT theo quý, và map mã Phụ lục → Nhóm.',
+        '<b>Kỳ & Danh mục</b>: doanh thu BHYT theo kì (quý, hoặc đợt thanh tra/kiểm toán đột xuất...), và map mã Phụ lục → Nhóm.',
         '<b>Tra cứu chuyên đề</b>: cơ sở pháp lý/thanh toán/quy tắc giám định, có thể thêm chuyên đề DKTK tự phát hiện.',
       ])}
       ${guideSection('3. Vai trò', [
