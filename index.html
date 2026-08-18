@@ -826,7 +826,7 @@ function visibleDetailRows() {
   let rows = state.lines;
   if (state.quarterFilter !== 'ALL') rows = rows.filter((l) => qKey(l.quarter, l.year) === state.quarterFilter);
   const q = state.detailsSearch.trim().toLowerCase();
-  if (q) rows = rows.filter((l) => [l.individual, l.department, l.service, l.error_desc, l.code, l.remediator, l.cause].some((f) => (f || '').toLowerCase().includes(q)));
+  if (q) rows = rows.filter((l) => [l.individual, l.department, l.service, l.error_desc, l.code, l.remediator, l.cause, l.link_code].some((f) => (f || '').toLowerCase().includes(q)));
   return rows;
 }
 
@@ -843,7 +843,7 @@ function detailsHTML() {
           <option value="ALL" ${state.quarterFilter === 'ALL' ? 'selected' : ''}>Tất cả (xếp theo chi phí)</option>
           ${qs.map((q) => `<option value="${q.key}" ${state.quarterFilter === q.key ? 'selected' : ''}>${q.label}</option>`).join('')}
         </select>
-        <input id="details-search" type="text" placeholder="Tìm theo Khoa/Người/Dịch vụ/Lỗi/Mã/Người khắc phục..." value="${escapeHtml(state.detailsSearch)}" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm min-w-[260px]" />
+        <input id="details-search" type="text" placeholder="Tìm theo Khoa/Người/Dịch vụ/Lỗi/Mã/Người khắc phục/Mã LK..." value="${escapeHtml(state.detailsSearch)}" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm min-w-[260px]" />
       </div>
       <div class="flex items-center gap-2">
         <span class="text-xs text-slate-400">${rows.length} dòng</span>
@@ -861,12 +861,12 @@ function detailsHTML() {
             <th class="text-left px-1.5 py-2">Người thực hiện/CĐ</th><th class="text-left px-1.5 py-2">Khoa</th>
             <th class="text-right px-1.5 py-2">Chi phí</th><th class="text-left px-1.5 py-2">Dịch vụ</th>
             <th class="text-left px-1.5 py-2">Lỗi</th><th class="text-left px-1.5 py-2">Phụ lục</th>
-            <th class="text-left px-1.5 py-2">Nguyên nhân</th><th class="text-left px-1.5 py-2">Người khắc phục</th><th></th>
+            <th class="text-left px-1.5 py-2">Nguyên nhân</th><th class="text-left px-1.5 py-2">Người khắc phục</th><th class="text-left px-1.5 py-2">Mã LK</th><th></th>
           </tr>
         </thead>
         <tbody>
           ${rows.map((l) => lineRow(l, canEdit)).join('')}
-          ${rows.length === 0 ? '<tr><td colspan="11" class="text-center text-slate-400 py-8">Chưa có dữ liệu</td></tr>' : ''}
+          ${rows.length === 0 ? '<tr><td colspan="12" class="text-center text-slate-400 py-8">Chưa có dữ liệu</td></tr>' : ''}
         </tbody>
       </table>
     </div>
@@ -887,6 +887,7 @@ function lineRow(l, canEdit) {
       <td class="px-1.5 py-1"><input ${dis} type="text" data-field="code" value="${escapeHtml(l.code || '')}" class="border border-slate-200 rounded px-1 py-1 w-20 text-xs font-mono" /></td>
       <td class="px-1.5 py-1"><select ${dis} data-field="cause" class="border border-slate-200 rounded px-1 py-1 w-20 text-xs"><option value="">—</option>${CAUSE_OPTIONS.map((c) => `<option ${c === l.cause ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
       <td class="px-1.5 py-1"><input ${dis} type="text" list="remediator-list" data-field="remediator" value="${escapeHtml(l.remediator || '')}" class="border border-slate-200 rounded px-1 py-1 w-24 text-xs" /></td>
+      <td class="px-1.5 py-1"><input ${dis} type="text" data-field="link_code" value="${escapeHtml(l.link_code || '')}" class="border border-slate-200 rounded px-1 py-1 w-24 text-xs" /></td>
       <td class="px-1.5 py-1 text-center">${canEdit ? `<button data-del-line="${l.id}" class="text-slate-400 hover:text-red-600">✕</button>` : ''}</td>
     </tr>`;
 }
@@ -1347,7 +1348,7 @@ async function bulkDeleteVisibleLines() {
   renderTab();
 }
 async function addLineRow() {
-  const payload = { quarter: 'Q1', year: new Date().getFullYear(), individual: '', department: '', cost: 0, service: '', error_desc: '', code: '', cause: null, remediator: '' };
+  const payload = { quarter: 'Q1', year: new Date().getFullYear(), individual: '', department: '', cost: 0, service: '', error_desc: '', code: '', cause: null, remediator: '', link_code: '' };
   const { data, error } = await sb.from('bhyt_lines').insert(payload).select().single();
   if (!error) { state.lines.push(data); renderTab(); }
 }
@@ -1459,6 +1460,7 @@ async function handleImport(e) {
         code: String(r['Phụ lục'] || '').trim(),
         cause: String(r['Nguyên nhân'] || '').trim() || null,
         remediator: String(r['Người khắc phục'] || r['Phụ trách khắc phục chính'] || '').trim(),
+        link_code: String(r['Mã LK'] || '').trim(),
       }))
       .filter((r) => r.quarter && r.year);
 
@@ -1511,7 +1513,7 @@ function handleExport() {
   const wb = XLSX.utils.book_new();
   const lineSheet = XLSX.utils.json_to_sheet(state.lines.map((l) => ({
     'Quý': QUARTER_VN[l.quarter] || l.quarter, 'Năm': l.year, 'Họ tên người thực hiện/CĐ': l.individual,
-    'Khoa': l.department, 'Chi phí': l.cost, 'Dịch vụ': l.service, 'Lỗi': l.error_desc, 'Phụ lục': l.code, 'Nguyên nhân': l.cause, 'Người khắc phục': l.remediator,
+    'Khoa': l.department, 'Chi phí': l.cost, 'Dịch vụ': l.service, 'Lỗi': l.error_desc, 'Phụ lục': l.code, 'Nguyên nhân': l.cause, 'Người khắc phục': l.remediator, 'Mã LK': l.link_code,
   })));
   XLSX.utils.book_append_sheet(wb, lineSheet, 'Chi tiết xuất toán');
   const perSheet = XLSX.utils.json_to_sheet(state.periods.map((p) => ({ 'Quý': QUARTER_VN[p.quarter] || p.quarter, 'Năm': p.year, 'Doanh thu BHYT': p.revenue })));
