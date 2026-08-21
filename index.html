@@ -425,8 +425,8 @@ function render() {
         <button id="btn-toggle-sidebar" class="flex items-center gap-2.5 text-left hover:bg-blue-800/60 rounded-md px-2 py-1 -ml-2">
           <span class="text-lg leading-none">☰</span>
           <div>
-            <div class="text-sm font-bold leading-tight tracking-wide">SHI MANAGEMENT</div>
-            <div class="text-xs text-blue-300 leading-tight">Dashboard quản lý xuất toán BHYT</div>
+            <div class="text-xl font-bold leading-tight tracking-wide">SHI MANAGEMENT</div>
+            <div class="text-sm text-blue-300 leading-tight">Dashboard quản lý xuất toán BHYT</div>
           </div>
         </button>
         <div class="flex items-center gap-2 flex-wrap">
@@ -611,44 +611,44 @@ function overviewHTML() {
       ${statCard('Mục tiêu ≤ ' + fmtPct(TARGET_RATE), vsTarget === null ? '—' : (vsTarget > 0 ? `Cao hơn ${vsTarget.toFixed(2)}%` : `Thấp hơn ${Math.abs(vsTarget).toFixed(2)}%`), vsTarget === null ? 'slate' : (vsTarget > 0 ? 'red' : 'emerald'))}
     </div>
 
-    <div class="grid md:grid-cols-2 gap-4 mb-6">
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
       <div class="bg-white border border-slate-200 rounded-lg p-3">
-        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ xuất toán theo kì</h3>
-        <div style="height:180px"><canvas id="rate-chart"></canvas></div>
+        <h3 class="text-xs font-semibold text-slate-700 mb-1.5">Tỉ lệ xuất toán theo kì</h3>
+        <div style="height:140px"><canvas id="rate-chart"></canvas></div>
       </div>
       <div class="bg-white border border-slate-200 rounded-lg p-3">
-        <h3 class="text-sm font-semibold text-slate-700 mb-2">Chi phí xuất toán &amp; Doanh thu BHYT theo kì</h3>
-        <div style="height:180px"><canvas id="cost-revenue-chart"></canvas></div>
+        <h3 class="text-xs font-semibold text-slate-700 mb-1.5">Chi phí xuất toán &amp; Doanh thu BHYT theo kì</h3>
+        <div style="height:140px"><canvas id="cost-revenue-chart"></canvas></div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-3">
+        <h3 class="text-xs font-semibold text-slate-700 mb-1.5">Tỉ lệ chi phí xuất toán theo nhóm</h3>
+        <div style="height:140px"><canvas id="group-cost-chart"></canvas></div>
       </div>
     </div>
 
-    <div class="bg-white border border-slate-200 rounded-lg p-3 mb-6">
-      <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ chi phí xuất toán theo nhóm</h3>
-      <div style="height:240px"><canvas id="group-cost-chart"></canvas></div>
-    </div>
-
-    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-6">
-      <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <h3 class="text-sm font-semibold text-slate-700">Xu hướng so với kì trước${current ? ` (${current.label}${previous ? ' so với ' + previous.label : ''})` : ''}</h3>
-        ${trendPct !== null ? `<span class="text-sm font-semibold ${trendPct > 0 ? 'text-red-600' : trendPct < 0 ? 'text-emerald-600' : 'text-slate-500'}">${trendPct > 0 ? '▲' : trendPct < 0 ? '▼' : '—'} ${Math.abs(trendPct).toFixed(1)}% tổng chi phí xuất toán</span>` : ''}
-      </div>
-      ${!previous ? '<div class="text-sm text-slate-400 py-6 text-center">Chưa đủ dữ liệu 2 kỳ liên tiếp để so sánh</div>' : '<div style="height:160px"><canvas id="trend-chart"></canvas></div>'}
-    </div>
-
-    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-6">
-      <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <h3 class="text-sm font-semibold text-slate-700">Pareto: 10 chuyên đề xuất toán nhiều chi phí nhất</h3>
-        <div class="flex text-xs rounded-md border border-slate-300 overflow-hidden">
-          <button data-pareto-scope="filtered" class="px-3 py-1.5 ${state.paretoScope === 'filtered' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Theo bộ lọc</button>
-          <button data-pareto-scope="cumulative" class="px-3 py-1.5 ${state.paretoScope === 'cumulative' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Luỹ kế toàn bộ</button>
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="bg-white border border-slate-200 rounded-lg p-3">
+        <div class="flex items-center justify-between flex-wrap gap-1 mb-1.5">
+          <h3 class="text-xs font-semibold text-slate-700">Xu hướng so với kì trước${current ? ` (${current.label}${previous ? ' vs ' + previous.label : ''})` : ''}</h3>
+          ${trendPct !== null ? `<span class="text-xs font-semibold ${trendPct > 0 ? 'text-orange-600' : trendPct < 0 ? 'text-emerald-600' : 'text-slate-500'}">${trendPct > 0 ? '▲' : trendPct < 0 ? '▼' : '—'} ${Math.abs(trendPct).toFixed(1)}%</span>` : ''}
         </div>
+        ${!previous ? '<div class="text-xs text-slate-400 py-6 text-center">Chưa đủ dữ liệu 2 kỳ liên tiếp để so sánh</div>' : '<div style="height:150px"><canvas id="trend-chart"></canvas></div>'}
       </div>
-      <div style="height:220px"><canvas id="pareto-cost-chart"></canvas></div>
+      <div class="bg-white border border-slate-200 rounded-lg p-3">
+        <div class="flex items-center justify-between flex-wrap gap-1 mb-1.5">
+          <h3 class="text-xs font-semibold text-slate-700">Pareto: 10 chuyên đề chi phí nhiều nhất</h3>
+          <div class="flex text-[11px] rounded-md border border-slate-300 overflow-hidden">
+            <button data-pareto-scope="filtered" class="px-2 py-1 ${state.paretoScope === 'filtered' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Theo lọc</button>
+            <button data-pareto-scope="cumulative" class="px-2 py-1 ${state.paretoScope === 'cumulative' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Luỹ kế</button>
+          </div>
+        </div>
+        <div style="height:150px"><canvas id="pareto-cost-chart"></canvas></div>
+      </div>
     </div>
 
-    <div class="bg-white border border-slate-200 rounded-lg p-4">
-      <h3 class="text-sm font-semibold text-slate-700 mb-3">Chuyên đề lặp lại nhiều nhất (tất cả các kì)</h3>
-      ${topRepeated.length === 0 ? '<div class="text-sm text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `<div style="height:${Math.max(180, topRepeated.length * 34)}px"><canvas id="top-repeated-cat-chart"></canvas></div>`}
+    <div class="bg-white border border-slate-200 rounded-lg p-3">
+      <h3 class="text-xs font-semibold text-slate-700 mb-1.5">Chuyên đề lặp lại nhiều nhất (tất cả các kì)</h3>
+      ${topRepeated.length === 0 ? '<div class="text-xs text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `<div style="height:${Math.max(140, topRepeated.length * 28)}px"><canvas id="top-repeated-cat-chart"></canvas></div>`}
     </div>
   `;
 }
@@ -709,8 +709,8 @@ function drawCostRevenueChart() {
     data: {
       labels: qs.map((q) => q.label),
       datasets: [
-        { label: 'Chi phí xuất toán (tr đ)', data: qs.map((q) => Math.round(q.finalizedCost / 1e6)), backgroundColor: '#dc2626',
-          datalabels: { anchor: 'end', align: 'top', color: '#dc2626', font: { weight: 'bold', size: 10 } } },
+        { label: 'Chi phí xuất toán (tr đ)', data: qs.map((q) => Math.round(q.finalizedCost / 1e6)), backgroundColor: '#ea580c',
+          datalabels: { anchor: 'end', align: 'top', color: '#ea580c', font: { weight: 'bold', size: 10 } } },
         { label: 'Doanh thu BHYT (tr đ)', data: qs.map((q) => Math.round(q.revenue / 1e6)), backgroundColor: '#94a3b8',
           datalabels: { anchor: 'end', align: 'top', color: '#64748b', font: { weight: 'bold', size: 10 } } },
       ],
@@ -738,8 +738,8 @@ function drawTrendChart() {
     data: { labels: groups, datasets: [
       { label: `${previous.label} (tr đ)`, data: groups.map((g) => Math.round((prevTotals[g] || 0) / 1e6)), backgroundColor: '#cbd5e1',
         datalabels: { anchor: 'end', align: 'top', color: '#64748b', font: { weight: 'bold', size: 10 } } },
-      { label: `${current.label} (tr đ)`, data: groups.map((g) => Math.round((curTotals[g] || 0) / 1e6)), backgroundColor: '#dc2626',
-        datalabels: { anchor: 'end', align: 'top', color: '#dc2626', font: { weight: 'bold', size: 10 } } },
+      { label: `${current.label} (tr đ)`, data: groups.map((g) => Math.round((curTotals[g] || 0) / 1e6)), backgroundColor: '#ea580c',
+        datalabels: { anchor: 'end', align: 'top', color: '#ea580c', font: { weight: 'bold', size: 10 } } },
     ] },
     options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 16 } },
       scales: { y: { title: { display: true, text: 'triệu đ' } } },
@@ -757,8 +757,8 @@ function drawParetoCharts() {
     data: {
       labels: data.map((d) => d.code),
       datasets: [
-        { type: 'bar', label: 'triệu đ', data: data.map((d) => Math.round(d.value / 1e6)), backgroundColor: '#dc2626', yAxisID: 'y',
-          datalabels: { anchor: 'end', align: 'top', color: '#dc2626', font: { weight: 'bold', size: 10 } } },
+        { type: 'bar', label: 'triệu đ', data: data.map((d) => Math.round(d.value / 1e6)), backgroundColor: '#ea580c', yAxisID: 'y',
+          datalabels: { anchor: 'end', align: 'top', color: '#ea580c', font: { weight: 'bold', size: 10 } } },
         { type: 'line', label: '% luỹ kế', data: data.map((d) => +d.cumPct.toFixed(1)), borderColor: '#f59e0b', yAxisID: 'y1', tension: 0.2,
           datalabels: { align: 'top', color: '#b45309', font: { weight: 'bold', size: 10 }, formatter: (v) => v + '%' } },
       ],
@@ -799,7 +799,7 @@ function drawGroupCostChart() {
   if (labels.length === 0) return;
   const values = labels.map((l) => totals[l]);
   const total = values.reduce((s, v) => s + v, 0);
-  const palette = ['#1e3a8a', '#dc2626', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d', '#475569', '#0d9488'];
+  const palette = ['#1e3a8a', '#0d9488', '#d97706', '#7c3aed', '#0891b2', '#65a30d', '#be185d', '#475569', '#ea580c', '#4338ca'];
   state.groupCostChartRef = new Chart(ctx, {
     type: 'doughnut',
     data: { labels, datasets: [{ data: values, backgroundColor: labels.map((_, i) => palette[i % palette.length]), borderWidth: 2, borderColor: '#fff' }] },
@@ -898,8 +898,8 @@ function lineRow(l, canEdit) {
 function heatCellColor(value, max, metric) {
   if (!max || value <= 0) return 'background-color:#f8fafc;color:#cbd5e1;';
   const pct = Math.min(1, value / max);
-  const base = metric === 'cost' ? [220, 38, 38] : [30, 58, 138]; // red for cost, navy for count
-  const alpha = 0.12 + pct * 0.75;
+  const base = metric === 'cost' ? [234, 88, 12] : [30, 58, 138]; // cam dịu cho chi phí, navy cho số lượt
+  const alpha = 0.10 + pct * 0.6;
   return `background-color:rgba(${base[0]},${base[1]},${base[2]},${alpha.toFixed(2)});color:${pct > 0.55 ? '#fff' : '#1e293b'};`;
 }
 
@@ -987,8 +987,8 @@ function drawHeatmapTopCharts(top10) {
     state.topCostChartRef = new Chart(costCtx, {
       type: 'bar',
       data: { labels: top10.map((e) => e.entity), datasets: [
-        { label: 'Tổng chi phí (đ)', data: top10.map((e) => e.total), backgroundColor: '#dc2626',
-          datalabels: { anchor: 'end', align: 'end', color: '#dc2626', font: { weight: 'bold', size: 10 }, formatter: (v) => fmtVND(v) } },
+        { label: 'Tổng chi phí (đ)', data: top10.map((e) => e.total), backgroundColor: '#ea580c',
+          datalabels: { anchor: 'end', align: 'end', color: '#ea580c', font: { weight: 'bold', size: 10 }, formatter: (v) => fmtVND(v) } },
       ] },
       options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 70 } },
         scales: { x: { title: { display: true, text: 'đ' }, ticks: { callback: (v) => fmtVND(v) } } }, plugins: { legend: { display: false } },
