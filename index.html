@@ -908,6 +908,26 @@ function heatCellColor(value, max, metric) {
 
 // Phân tích ô tìm kiếm ở tab Khoa & Cá nhân: tự nhận diện đang tìm chuyên đề hay tìm người/khoa,
 // áp dụng đúng các bộ lọc đang bật (Overview filters + Nguyên nhân riêng của tab này)
+// Gộp dữ liệu tìm kiếm theo đúng chiều tương ứng (Khoa/Cá nhân cho mode 'category', Chuyên đề cho mode 'individual'/'department'),
+// kèm số kì (quý) xuất hiện — để trả lời "ai/chuyên đề nào lặp lại qua mấy kì"
+function computeSearchGroups(mode, rows) {
+  const keyFn = mode === 'category'
+    ? (state.heatmapMode === 'department' ? (l) => khoaNormalizer()(l.department) : (l) => bacSiNormalizer()(l.individual))
+    : (l) => l.code;
+  const map = new Map();
+  rows.forEach((l) => {
+    const k = keyFn(l);
+    if (!k) return;
+    if (!map.has(k)) map.set(k, { key: k, cost: 0, count: 0, quarters: new Set() });
+    const rec = map.get(k);
+    rec.cost += l.cost || 0;
+    rec.count += 1;
+    rec.quarters.add(qKey(l.quarter, l.year));
+  });
+  return Array.from(map.values()).map((r) => ({ key: r.key, cost: r.cost, count: r.count, quarterCount: r.quarters.size }))
+    .sort((a, b) => b.quarterCount - a.quarterCount || b.cost - a.cost);
+}
+
 function heatmapSearchAnalyze(term) {
   const q = term.trim().toLowerCase();
   if (!q) return null;
@@ -922,7 +942,7 @@ function heatmapSearchAnalyze(term) {
   });
   if (matchingCodes.size > 0) {
     const subset = rows.filter((l) => matchingCodes.has(l.code));
-    return { mode: 'category', codes: Array.from(matchingCodes), rows: subset };
+    return { mode: 'category', codes: Array.from(matchingCodes), rows: subset, groups: computeSearchGroups('category', subset) };
   }
 
   const nBacSi = bacSiNormalizer();
@@ -930,7 +950,7 @@ function heatmapSearchAnalyze(term) {
   rows.forEach((l) => { const n = nBacSi(l.individual); if (n && n.toLowerCase().includes(q)) matchingIndividuals.add(n); });
   if (matchingIndividuals.size > 0) {
     const subset = rows.filter((l) => matchingIndividuals.has(nBacSi(l.individual)));
-    return { mode: 'individual', names: Array.from(matchingIndividuals), rows: subset };
+    return { mode: 'individual', names: Array.from(matchingIndividuals), rows: subset, groups: computeSearchGroups('individual', subset) };
   }
 
   const nKhoa = khoaNormalizer();
@@ -938,7 +958,7 @@ function heatmapSearchAnalyze(term) {
   rows.forEach((l) => { const n = nKhoa(l.department); if (n && n.toLowerCase().includes(q)) matchingDepts.add(n); });
   if (matchingDepts.size > 0) {
     const subset = rows.filter((l) => matchingDepts.has(nKhoa(l.department)));
-    return { mode: 'department', names: Array.from(matchingDepts), rows: subset };
+    return { mode: 'department', names: Array.from(matchingDepts), rows: subset, groups: computeSearchGroups('department', subset) };
   }
 
   return { mode: 'none', rows: [] };
@@ -952,15 +972,38 @@ function searchResultHTML(result) {
   if (result.mode === 'category') title = `Kết quả cho chuyên đề: ${result.codes.map((c) => `${c}${categoryNameOf(c) ? ' — ' + categoryNameOf(c) : ''}`).join(', ')}`;
   if (result.mode === 'individual') title = `Kết quả cho cá nhân: ${result.names.join(', ')}`;
   if (result.mode === 'department') title = `Kết quả cho khoa: ${result.names.join(', ')}`;
-  const groupLabel = result.mode === 'category' ? (state.heatmapMode === 'department' ? 'theo Khoa' : 'theo Cá nhân') : 'theo Chuyên đề';
+  const groupLabel = result.mode === 'category' ? (state.heatmapMode === 'department' ? 'Khoa' : 'Cá nhân') : 'Chuyên đề';
+  const groups = result.groups || [];
 
   return `
     <div class="bg-white border border-slate-200 rounded-lg p-4 mb-6">
       <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <h3 class="text-sm font-semibold text-slate-700">${escapeHtml(title)} <span class="text-slate-400 font-normal">— ${groupLabel}</span></h3>
-        <span class="text-xs text-slate-400">${result.rows.length} dòng · ${state.heatmapMetric === 'cost' ? 'theo chi phí' : 'theo số lượt'}${state.heatmapCause !== 'ALL' ? ' · nguyên nhân: ' + state.heatmapCause : ''}</span>
+        <h3 class="text-sm font-semibold text-slate-700">${escapeHtml(title)} <span class="text-slate-400 font-normal">— theo ${groupLabel}</span></h3>
+        <span class="text-xs text-slate-400">${result.rows.length} dòng · ${state.heatmapMetric === 'cost' ? 'biểu đồ theo chi phí' : 'biểu đồ theo số lượt'}${state.heatmapCause !== 'ALL' ? ' · nguyên nhân: ' + state.heatmapCause : ''}</span>
       </div>
-      <div style="height:280px"><canvas id="search-result-chart"></canvas></div>
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div style="height:${Math.max(220, groups.length * 30)}px"><canvas id="search-result-chart"></canvas></div>
+        <div class="overflow-y-auto" style="max-height:${Math.max(220, groups.length * 30)}px">
+          <table class="w-full text-sm">
+            <thead class="text-xs text-slate-500 uppercase sticky top-0 bg-white"><tr>
+              <th class="text-left py-1.5">${groupLabel}</th>
+              <th class="text-center py-1.5">Số kì xuất hiện</th>
+              <th class="text-right py-1.5">Chi phí</th>
+              <th class="text-right py-1.5">Số hồ sơ</th>
+            </tr></thead>
+            <tbody>
+              ${groups.map((g) => `
+                <tr class="border-t border-slate-100 ${g.quarterCount > 1 ? 'bg-amber-50' : ''}">
+                  <td class="py-1.5 font-medium">${escapeHtml(g.key)}</td>
+                  <td class="py-1.5 text-center font-semibold ${g.quarterCount > 1 ? 'text-amber-700' : ''}">${g.quarterCount}${g.quarterCount > 1 ? ' 🔁' : ''}</td>
+                  <td class="py-1.5 text-right">${fmtVND(g.cost)}</td>
+                  <td class="py-1.5 text-right">${g.count}</td>
+                </tr>`).join('')}
+              ${groups.length === 0 ? '<tr><td colspan="4" class="text-center text-slate-400 py-6">Không có dữ liệu</td></tr>' : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -1035,25 +1078,7 @@ function drawSearchResultChart(result) {
   if (state.searchResultChartRef) { state.searchResultChartRef.destroy(); state.searchResultChartRef = null; }
   if (!ctx) return;
 
-  let groups;
-  if (result.mode === 'category') {
-    const normalize = state.heatmapMode === 'department' ? khoaNormalizer() : bacSiNormalizer();
-    const field = state.heatmapMode === 'department' ? 'department' : 'individual';
-    const map = new Map();
-    result.rows.forEach((l) => {
-      const k = normalize(l[field]);
-      if (!k) return;
-      map.set(k, (map.get(k) || 0) + (state.heatmapMetric === 'cost' ? (l.cost || 0) : 1));
-    });
-    groups = Array.from(map.entries()).map(([key, value]) => ({ key, value }));
-  } else {
-    const map = new Map();
-    result.rows.forEach((l) => {
-      if (!l.code) return;
-      map.set(l.code, (map.get(l.code) || 0) + (state.heatmapMetric === 'cost' ? (l.cost || 0) : 1));
-    });
-    groups = Array.from(map.entries()).map(([key, value]) => ({ key, value }));
-  }
+  let groups = (result.groups || []).map((g) => ({ key: g.key, value: state.heatmapMetric === 'cost' ? g.cost : g.count }));
   groups.sort((a, b) => b.value - a.value);
   groups = groups.slice(0, 20);
   if (groups.length === 0) return;
