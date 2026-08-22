@@ -96,12 +96,12 @@ let state = {
   dashYear: 'ALL', dashQuarter: 'ALL', paretoScope: 'filtered',
   filterKhoa: 'ALL', filterBacSi: 'ALL', filterNhom: 'ALL', filterCause: 'ALL', filterRemediator: 'ALL',
   quarterFilter: 'ALL', detailsSearch: '',
-  heatmapMode: 'department', heatmapAxis: 'quarter', heatmapMetric: 'cost', heatmapCause: 'ALL',
+  heatmapMode: 'department', heatmapAxis: 'quarter', heatmapMetric: 'cost', heatmapCause: 'ALL', heatmapSearch: '',
   riskQuarterKey: null,
   refSearch: '', refGroup: 'ALL', refSource: 'ALL', refExpanded: new Set(), refAdding: false, refEditingId: null,
   showPwBox: false, pwMsg: null, sidebarOpen: false,
   rateChartRef: null, costRevenueChartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
-  topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null, groupCostChartRef: null,
+  topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null, groupCostChartRef: null, searchResultChartRef: null,
 };
 
 // ---------------------------------------------------------------
@@ -508,7 +508,10 @@ function renderTab() {
   el.innerHTML = banner + content;
   attachTabEvents();
   if (state.tab === 'overview') drawAllOverviewCharts();
-  if (state.tab === 'heatmap') drawHeatmapTopCharts(state._heatmapTop10 || []);
+  if (state.tab === 'heatmap') {
+    const sr = state._heatmapSearchResult;
+    if (sr && sr.mode !== 'none') drawSearchResultChart(sr); else drawHeatmapTopCharts(state._heatmapTop10 || []);
+  }
 }
 
 // ---------------------------------------------------------------
@@ -903,7 +906,68 @@ function heatCellColor(value, max, metric) {
   return `background-color:rgba(${base[0]},${base[1]},${base[2]},${alpha.toFixed(2)});color:${pct > 0.55 ? '#fff' : '#1e293b'};`;
 }
 
+// Phân tích ô tìm kiếm ở tab Khoa & Cá nhân: tự nhận diện đang tìm chuyên đề hay tìm người/khoa,
+// áp dụng đúng các bộ lọc đang bật (Overview filters + Nguyên nhân riêng của tab này)
+function heatmapSearchAnalyze(term) {
+  const q = term.trim().toLowerCase();
+  if (!q) return null;
+  let rows = scopedLines();
+  if (state.heatmapCause !== 'ALL') rows = rows.filter((l) => (l.cause || '') === state.heatmapCause);
+
+  const matchingCodes = new Set();
+  rows.forEach((l) => {
+    if (!l.code) return;
+    const name = (categoryNameOf(l.code) || '').toLowerCase();
+    if (l.code.toLowerCase().includes(q) || name.includes(q)) matchingCodes.add(l.code);
+  });
+  if (matchingCodes.size > 0) {
+    const subset = rows.filter((l) => matchingCodes.has(l.code));
+    return { mode: 'category', codes: Array.from(matchingCodes), rows: subset };
+  }
+
+  const nBacSi = bacSiNormalizer();
+  const matchingIndividuals = new Set();
+  rows.forEach((l) => { const n = nBacSi(l.individual); if (n && n.toLowerCase().includes(q)) matchingIndividuals.add(n); });
+  if (matchingIndividuals.size > 0) {
+    const subset = rows.filter((l) => matchingIndividuals.has(nBacSi(l.individual)));
+    return { mode: 'individual', names: Array.from(matchingIndividuals), rows: subset };
+  }
+
+  const nKhoa = khoaNormalizer();
+  const matchingDepts = new Set();
+  rows.forEach((l) => { const n = nKhoa(l.department); if (n && n.toLowerCase().includes(q)) matchingDepts.add(n); });
+  if (matchingDepts.size > 0) {
+    const subset = rows.filter((l) => matchingDepts.has(nKhoa(l.department)));
+    return { mode: 'department', names: Array.from(matchingDepts), rows: subset };
+  }
+
+  return { mode: 'none', rows: [] };
+}
+
+function searchResultHTML(result) {
+  if (result.mode === 'none') {
+    return `<div class="bg-white border border-slate-200 rounded-lg p-8 text-center text-sm text-slate-400 mb-6">Không tìm thấy chuyên đề, cá nhân hoặc khoa nào khớp với "${escapeHtml(state.heatmapSearch)}"</div>`;
+  }
+  let title = '';
+  if (result.mode === 'category') title = `Kết quả cho chuyên đề: ${result.codes.map((c) => `${c}${categoryNameOf(c) ? ' — ' + categoryNameOf(c) : ''}`).join(', ')}`;
+  if (result.mode === 'individual') title = `Kết quả cho cá nhân: ${result.names.join(', ')}`;
+  if (result.mode === 'department') title = `Kết quả cho khoa: ${result.names.join(', ')}`;
+  const groupLabel = result.mode === 'category' ? (state.heatmapMode === 'department' ? 'theo Khoa' : 'theo Cá nhân') : 'theo Chuyên đề';
+
+  return `
+    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-6">
+      <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <h3 class="text-sm font-semibold text-slate-700">${escapeHtml(title)} <span class="text-slate-400 font-normal">— ${groupLabel}</span></h3>
+        <span class="text-xs text-slate-400">${result.rows.length} dòng · ${state.heatmapMetric === 'cost' ? 'theo chi phí' : 'theo số lượt'}${state.heatmapCause !== 'ALL' ? ' · nguyên nhân: ' + state.heatmapCause : ''}</span>
+      </div>
+      <div style="height:280px"><canvas id="search-result-chart"></canvas></div>
+    </div>
+  `;
+}
+
 function heatmapHTML() {
+  const searchResult = heatmapSearchAnalyze(state.heatmapSearch);
+  state._heatmapSearchResult = searchResult;
   const { entities, axisLabels } = heatmapData(state.heatmapMode, state.heatmapAxis, state.heatmapMetric, state.heatmapCause);
   const max = Math.max(1, ...entities.flatMap((e) => e.values));
   const top10 = entities.slice(0, 10);
@@ -928,8 +992,10 @@ function heatmapHTML() {
         <button data-hm="cause:Cá nhân" class="px-3 py-1.5 ${state.heatmapCause === 'Cá nhân' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Cá nhân</button>
         <button data-hm="cause:Hệ thống" class="px-3 py-1.5 ${state.heatmapCause === 'Hệ thống' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Hệ thống</button>
       </div>
+      <input id="heatmap-search" type="text" placeholder="Tìm chuyên đề, tên người, hoặc khoa..." value="${escapeHtml(state.heatmapSearch)}" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[220px]" />
     </div>
 
+    ${searchResult ? searchResultHTML(searchResult) : `
     <div class="bg-white border border-slate-200 rounded-lg p-4 mb-6 overflow-x-auto">
       <h3 class="text-sm font-semibold text-slate-700 mb-3">Heatmap ${state.heatmapMode === 'department' ? 'Khoa' : 'Cá nhân'} × ${state.heatmapAxis === 'quarter' ? 'Quý' : 'Chuyên đề'} (${state.heatmapMetric === 'cost' ? 'chi phí' : 'số lượt'}${state.heatmapCause !== 'ALL' ? ' · nguyên nhân: ' + state.heatmapCause : ''})</h3>
       ${entities.length === 0 ? '<div class="text-sm text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `
@@ -960,7 +1026,52 @@ function heatmapHTML() {
         ${top10.length === 0 ? '<div class="text-sm text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `<div style="height:${Math.max(180, top10.length * 34)}px"><canvas id="top-cost-chart"></canvas></div>`}
       </div>
     </div>
+    `}
   `;
+}
+
+function drawSearchResultChart(result) {
+  const ctx = document.getElementById('search-result-chart');
+  if (state.searchResultChartRef) { state.searchResultChartRef.destroy(); state.searchResultChartRef = null; }
+  if (!ctx) return;
+
+  let groups;
+  if (result.mode === 'category') {
+    const normalize = state.heatmapMode === 'department' ? khoaNormalizer() : bacSiNormalizer();
+    const field = state.heatmapMode === 'department' ? 'department' : 'individual';
+    const map = new Map();
+    result.rows.forEach((l) => {
+      const k = normalize(l[field]);
+      if (!k) return;
+      map.set(k, (map.get(k) || 0) + (state.heatmapMetric === 'cost' ? (l.cost || 0) : 1));
+    });
+    groups = Array.from(map.entries()).map(([key, value]) => ({ key, value }));
+  } else {
+    const map = new Map();
+    result.rows.forEach((l) => {
+      if (!l.code) return;
+      map.set(l.code, (map.get(l.code) || 0) + (state.heatmapMetric === 'cost' ? (l.cost || 0) : 1));
+    });
+    groups = Array.from(map.entries()).map(([key, value]) => ({ key, value }));
+  }
+  groups.sort((a, b) => b.value - a.value);
+  groups = groups.slice(0, 20);
+  if (groups.length === 0) return;
+
+  const color = '#1d4ed8';
+  state.searchResultChartRef = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: groups.map((g) => g.key), datasets: [
+      { label: state.heatmapMetric === 'cost' ? 'Chi phí (đ)' : 'Số lượt', data: groups.map((g) => g.value), backgroundColor: color,
+        datalabels: { anchor: 'end', align: 'end', color, font: { weight: 'bold', size: 10 }, formatter: (v) => state.heatmapMetric === 'cost' ? fmtVND(v) : v } },
+    ] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 70 } },
+      scales: { x: { title: { display: true, text: state.heatmapMetric === 'cost' ? 'đ' : 'số lượt' } } },
+      plugins: { legend: { display: false } },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) goToDetailsWithSearch(groups[elements[0].index].key); },
+    },
+  });
 }
 
 function drawHeatmapTopCharts(top10) {
@@ -1287,6 +1398,11 @@ function attachTabEvents() {
         renderTab();
       };
     });
+    const hmSearchEl = document.getElementById('heatmap-search');
+    if (hmSearchEl) {
+      hmSearchEl.addEventListener('input', (e) => { state.heatmapSearch = e.target.value; renderTab(); });
+      const val = hmSearchEl.value; hmSearchEl.focus(); hmSearchEl.value = ''; hmSearchEl.value = val;
+    }
   }
   if (state.tab === 'risk') {
     const rq = document.getElementById('risk-quarter');
