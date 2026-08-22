@@ -180,12 +180,30 @@ async function handleChangePassword() {
 // ---------------------------------------------------------------
 // DATA LOADING
 // ---------------------------------------------------------------
+// Supabase mặc định chỉ trả về tối đa 1000 dòng/lần gọi — hàm này tự lấy theo từng đợt cho đến khi hết,
+// để không bị "mất" dữ liệu khi bảng có hơn 1000 dòng.
+async function fetchAllRows(table, orderCols) {
+  const PAGE = 1000;
+  let all = [];
+  let from = 0;
+  while (true) {
+    let q = sb.from(table).select('*').range(from, from + PAGE - 1);
+    (orderCols || []).forEach((c) => { q = q.order(c); });
+    const { data, error } = await q;
+    if (error) { console.error('fetchAllRows lỗi', table, error); break; }
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
+}
+
 async function loadAll() {
-  const [{ data: lines }, { data: pers }, { data: cats }, { data: refs }] = await Promise.all([
-    sb.from('bhyt_lines').select('*'),
-    sb.from('bhyt_periods').select('*').order('year').order('quarter'),
-    sb.from('bhyt_categories').select('*').order('code'),
-    sb.from('bhyt_reference').select('*').order('phu_luc').order('stt'),
+  const [lines, pers, cats, refs] = await Promise.all([
+    fetchAllRows('bhyt_lines'),
+    fetchAllRows('bhyt_periods', ['year', 'quarter']),
+    fetchAllRows('bhyt_categories', ['code']),
+    fetchAllRows('bhyt_reference', ['phu_luc', 'stt']),
   ]);
   state.lines = lines || [];
   state.periods = pers || [];
@@ -833,6 +851,14 @@ function visibleDetailRows() {
   return rows;
 }
 
+// Dòng "trống" = chỉ có Kì/Năm, không có bất kỳ dữ liệu nào khác
+function isBlankLine(l) {
+  return !l.code && !l.cost && !l.individual && !l.department && !l.service && !l.error_desc && !l.cause && !l.remediator && !l.link_code;
+}
+function blankLines() {
+  return state.lines.filter(isBlankLine);
+}
+
 function detailsHTML() {
   const canEdit = state.role === 'editor';
   const qs = quarterSummaries();
@@ -851,6 +877,7 @@ function detailsHTML() {
       <div class="flex items-center gap-2">
         <span class="text-xs text-slate-400">${rows.length} dòng</span>
         ${canEdit && rows.length > 0 ? `<button id="btn-bulk-delete" class="border border-red-300 text-red-600 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-red-50">Xoá ${rows.length} dòng đang hiển thị</button>` : ''}
+        ${canEdit && blankLines().length > 0 ? `<button id="btn-delete-blank" class="border border-amber-300 text-amber-700 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-amber-50">Xoá ${blankLines().length} dòng trống</button>` : ''}
         ${canEdit ? '<button id="btn-add-line" class="bg-blue-900 text-white rounded-md px-3 py-1.5 text-sm font-medium hover:bg-blue-800">+ Thêm dòng</button>' : ''}
       </div>
     </div>
@@ -1406,6 +1433,8 @@ function attachTabEvents() {
     if (addBtn) addBtn.onclick = addLineRow;
     const bulkDelBtn = document.getElementById('btn-bulk-delete');
     if (bulkDelBtn) bulkDelBtn.onclick = bulkDeleteVisibleLines;
+    const blankDelBtn = document.getElementById('btn-delete-blank');
+    if (blankDelBtn) blankDelBtn.onclick = deleteBlankLines;
     document.querySelectorAll('#tab-content tr[data-id]').forEach((tr) => {
       tr.querySelectorAll('[data-field]').forEach((input) => input.addEventListener('change', () => saveLineField(tr.dataset.id, input.dataset.field, input.value)));
       const delBtn = tr.querySelector('[data-del-line]');
@@ -1481,6 +1510,17 @@ async function bulkDeleteVisibleLines() {
   const rows = visibleDetailRows();
   if (rows.length === 0) return;
   if (!confirm(`Xoá ${rows.length} dòng đang hiển thị? Không thể hoàn tác.`)) return;
+  const ids = rows.map((r) => r.id);
+  const { error } = await sb.from('bhyt_lines').delete().in('id', ids);
+  if (error) { alert('Lỗi khi xoá: ' + error.message); return; }
+  const idSet = new Set(ids.map(String));
+  state.lines = state.lines.filter((l) => !idSet.has(String(l.id)));
+  renderTab();
+}
+async function deleteBlankLines() {
+  const rows = blankLines();
+  if (rows.length === 0) return;
+  if (!confirm(`Xoá ${rows.length} dòng trống (chỉ có Kì/Năm, không có dữ liệu nào khác)? Không thể hoàn tác.`)) return;
   const ids = rows.map((r) => r.id);
   const { error } = await sb.from('bhyt_lines').delete().in('id', ids);
   if (error) { alert('Lỗi khi xoá: ' + error.message); return; }
@@ -1632,7 +1672,14 @@ async function handleImport(e) {
     if (catRows.length) results.push(['Danh mục chuyên đề', await sb.from('bhyt_categories').upsert(catRows, { onConflict: 'code' })]);
     if (dedupedPeriods.length) results.push(['Doanh thu BHYT', await sb.from('bhyt_periods').upsert(dedupedPeriods, { onConflict: 'quarter,year' })]);
 
-    if (lineRows.length) results.push(['Chi tiết xuất toán', await sb.from('bhyt_lines').insert(lineRows)]);
+    if (lineRows.length) {
+      const CHUNK = 500;
+      for (let i = 0; i < lineRows.length; i += CHUNK) {
+        const chunk = lineRows.slice(i, i + CHUNK);
+        const res = await sb.from('bhyt_lines').insert(chunk);
+        results.push([`Chi tiết xuất toán (dòng ${i + 1}-${i + chunk.length})`, res]);
+      }
+    }
 
     const failed = results.filter(([, res]) => res.error);
     await loadAll();
