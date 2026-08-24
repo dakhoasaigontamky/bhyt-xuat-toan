@@ -91,11 +91,11 @@ function buildNormalizer(values) {
 
 let state = {
   user: null, role: 'viewer',
-  lines: [], periods: [], categories: [], reference: [],
+  lines: [], periods: [], categories: [], reference: [], codeAliases: [],
   tab: 'overview',
   dashYear: 'ALL', dashQuarter: 'ALL', paretoScope: 'filtered',
   filterKhoa: 'ALL', filterBacSi: 'ALL', filterNhom: 'ALL', filterCause: 'ALL', filterRemediator: 'ALL',
-  quarterFilter: 'ALL', detailsSearch: '',
+  quarterFilter: 'ALL', detailsSearch: '', detailsPage: 1,
   heatmapMode: 'department', heatmapAxis: 'quarter', heatmapMetric: 'cost', heatmapCause: 'ALL', heatmapSearch: '',
   riskQuarterKey: null,
   refSearch: '', refGroup: 'ALL', refSource: 'ALL', refExpanded: new Set(), refAdding: false, refEditingId: null,
@@ -165,7 +165,7 @@ async function afterLogin(session) {
 }
 async function logout() {
   await sb.auth.signOut();
-  state = { ...state, user: null, role: 'viewer', lines: [], periods: [], categories: [], reference: [], tab: 'overview' };
+  state = { ...state, user: null, role: 'viewer', lines: [], periods: [], categories: [], reference: [], codeAliases: [], tab: 'overview' };
 }
 async function handleChangePassword() {
   const newPw = document.getElementById('pw-new').value;
@@ -199,19 +199,29 @@ async function fetchAllRows(table, orderCols) {
 }
 
 async function loadAll() {
-  const [lines, pers, cats, refs] = await Promise.all([
+  const [lines, pers, cats, refs, aliases] = await Promise.all([
     fetchAllRows('bhyt_lines'),
     fetchAllRows('bhyt_periods', ['year', 'quarter']),
     fetchAllRows('bhyt_categories', ['code']),
     fetchAllRows('bhyt_reference', ['phu_luc', 'stt']),
+    fetchAllRows('bhyt_code_aliases', ['alias_code']),
   ]);
   state.lines = lines || [];
   state.periods = pers || [];
   state.categories = cats || [];
   state.reference = refs || [];
+  state.codeAliases = aliases || [];
   state.khoaNorm = buildNormalizer(state.lines.map((l) => l.department));
   state.bacSiNorm = buildNormalizer(state.lines.map((l) => l.individual));
   state.remediatorNorm = buildNormalizer(state.lines.map((l) => l.remediator));
+}
+
+// Quy 1 mã Phụ lục về đúng mã chuẩn đã khai báo trong Ánh xạ mã chuyên đề (nếu có), giữ nguyên nếu chưa khai báo
+function resolveCode(rawCode) {
+  const c = String(rawCode || '').trim();
+  if (!c) return c;
+  const alias = state.codeAliases.find((a) => a.alias_code === c);
+  return alias ? alias.canonical_code : c;
 }
 
 // ---------------------------------------------------------------
@@ -859,10 +869,16 @@ function blankLines() {
   return state.lines.filter(isBlankLine);
 }
 
+const DETAILS_PAGE_SIZE = 100;
 function detailsHTML() {
   const canEdit = state.role === 'editor';
   const qs = quarterSummaries();
   let rows = [...visibleDetailRows()].sort((a, b) => (b.cost || 0) - (a.cost || 0));
+  const totalPages = Math.max(1, Math.ceil(rows.length / DETAILS_PAGE_SIZE));
+  if (state.detailsPage > totalPages) state.detailsPage = totalPages;
+  if (state.detailsPage < 1) state.detailsPage = 1;
+  const pageStart = (state.detailsPage - 1) * DETAILS_PAGE_SIZE;
+  const pageRows = rows.slice(pageStart, pageStart + DETAILS_PAGE_SIZE);
 
   return `
     <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
@@ -895,11 +911,19 @@ function detailsHTML() {
           </tr>
         </thead>
         <tbody>
-          ${rows.map((l) => lineRow(l, canEdit)).join('')}
+          ${pageRows.map((l) => lineRow(l, canEdit)).join('')}
           ${rows.length === 0 ? '<tr><td colspan="12" class="text-center text-slate-400 py-8">Chưa có dữ liệu</td></tr>' : ''}
         </tbody>
       </table>
     </div>
+    ${totalPages > 1 ? `
+    <div class="flex items-center justify-between mt-3 text-sm">
+      <span class="text-slate-500">Trang ${state.detailsPage}/${totalPages} — dòng ${pageStart + 1}-${Math.min(pageStart + DETAILS_PAGE_SIZE, rows.length)} / ${rows.length}</span>
+      <div class="flex gap-2">
+        <button id="btn-page-prev" ${state.detailsPage <= 1 ? 'disabled' : ''} class="border border-slate-300 rounded-md px-3 py-1.5 text-sm ${state.detailsPage <= 1 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 hover:bg-slate-50'}">← Trước</button>
+        <button id="btn-page-next" ${state.detailsPage >= totalPages ? 'disabled' : ''} class="border border-slate-300 rounded-md px-3 py-1.5 text-sm ${state.detailsPage >= totalPages ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 hover:bg-slate-50'}">Sau →</button>
+      </div>
+    </div>` : ''}
   `;
 }
 
@@ -1264,6 +1288,28 @@ function setupHTML() {
           </tbody>
         </table>
       </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-2">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700">Ánh xạ mã chuyên đề (khi BHYT đổi số Phụ lục giữa các kỳ)</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Cùng 1 chuyên đề nhưng mỗi kỳ BHYT đánh số khác nhau? Khai báo "mã kỳ này = mã chuẩn" ở đây — mã mới nhập vào sẽ tự quy về mã chuẩn khi import.</p>
+          </div>
+          ${canEdit ? '<div class="flex gap-2"><button id="btn-add-alias" class="text-blue-800 hover:text-blue-600 text-sm font-medium whitespace-nowrap">+ Thêm ánh xạ</button><button id="btn-apply-aliases" class="text-amber-700 hover:text-amber-800 text-sm font-medium whitespace-nowrap">Áp dụng cho dữ liệu đã có</button></div>' : ''}
+        </div>
+        <table class="w-full text-sm">
+          <thead class="text-xs text-slate-500 uppercase"><tr><th class="text-left py-1">Mã kỳ này (alias)</th><th class="text-left py-1">Mã chuẩn (quy về)</th><th class="text-left py-1">Ghi chú</th><th></th></tr></thead>
+          <tbody>
+            ${state.codeAliases.map((a, idx) => `
+              <tr class="border-t border-slate-100">
+                <td class="py-1.5"><input ${canEdit ? '' : 'disabled'} type="text" data-a-idx="${idx}" data-a-field="alias_code" value="${escapeHtml(a.alias_code)}" class="border border-slate-200 rounded px-1 py-1 w-32 font-mono" /></td>
+                <td class="py-1.5"><input ${canEdit ? '' : 'disabled'} type="text" data-a-idx="${idx}" data-a-field="canonical_code" value="${escapeHtml(a.canonical_code)}" class="border border-slate-200 rounded px-1 py-1 w-32 font-mono" /></td>
+                <td class="py-1.5"><input ${canEdit ? '' : 'disabled'} type="text" data-a-idx="${idx}" data-a-field="note" value="${escapeHtml(a.note || '')}" class="border border-slate-200 rounded px-1 py-1 w-full" /></td>
+                <td class="py-1.5 text-center">${canEdit ? `<button data-del-alias="${escapeHtml(a.alias_code)}" class="text-slate-400 hover:text-red-600">✕</button>` : ''}</td>
+              </tr>`).join('')}
+            ${state.codeAliases.length === 0 ? '<tr><td colspan="4" class="text-center text-slate-400 py-6">Chưa có ánh xạ nào</td></tr>' : ''}
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 }
@@ -1423,10 +1469,10 @@ function attachTabEvents() {
   }
   if (state.tab === 'details') {
     const filterEl = document.getElementById('quarter-filter');
-    if (filterEl) filterEl.onchange = (e) => { state.quarterFilter = e.target.value; renderTab(); };
+    if (filterEl) filterEl.onchange = (e) => { state.quarterFilter = e.target.value; state.detailsPage = 1; renderTab(); };
     const searchEl = document.getElementById('details-search');
     if (searchEl) {
-      searchEl.addEventListener('input', (e) => { state.detailsSearch = e.target.value; renderTab(); });
+      searchEl.addEventListener('input', (e) => { state.detailsSearch = e.target.value; state.detailsPage = 1; renderTab(); });
       const val = searchEl.value; searchEl.focus(); searchEl.value = ''; searchEl.value = val;
     }
     const addBtn = document.getElementById('btn-add-line');
@@ -1435,6 +1481,10 @@ function attachTabEvents() {
     if (bulkDelBtn) bulkDelBtn.onclick = bulkDeleteVisibleLines;
     const blankDelBtn = document.getElementById('btn-delete-blank');
     if (blankDelBtn) blankDelBtn.onclick = deleteBlankLines;
+    const prevBtn = document.getElementById('btn-page-prev');
+    if (prevBtn) prevBtn.onclick = () => { state.detailsPage -= 1; renderTab(); };
+    const nextBtn = document.getElementById('btn-page-next');
+    if (nextBtn) nextBtn.onclick = () => { state.detailsPage += 1; renderTab(); };
     document.querySelectorAll('#tab-content tr[data-id]').forEach((tr) => {
       tr.querySelectorAll('[data-field]').forEach((input) => input.addEventListener('change', () => saveLineField(tr.dataset.id, input.dataset.field, input.value)));
       const delBtn = tr.querySelector('[data-del-line]');
@@ -1471,6 +1521,12 @@ function attachTabEvents() {
     document.querySelectorAll('[data-del-period]').forEach((btn) => { btn.onclick = () => deletePeriod(btn.dataset.delPeriod); });
     document.querySelectorAll('[data-c-idx]').forEach((input) => input.addEventListener('change', () => saveCategoryField(Number(input.dataset.cIdx), input.dataset.cField, input.value)));
     document.querySelectorAll('[data-del-category]').forEach((btn) => { btn.onclick = () => deleteCategory(btn.dataset.delCategory); });
+    const addAliasBtn = document.getElementById('btn-add-alias');
+    if (addAliasBtn) addAliasBtn.onclick = addAliasRow;
+    const applyAliasBtn = document.getElementById('btn-apply-aliases');
+    if (applyAliasBtn) applyAliasBtn.onclick = applyAliasesToExisting;
+    document.querySelectorAll('[data-a-idx]').forEach((input) => input.addEventListener('change', () => saveAliasField(Number(input.dataset.aIdx), input.dataset.aField, input.value)));
+    document.querySelectorAll('[data-del-alias]').forEach((btn) => { btn.onclick = () => deleteAlias(btn.dataset.delAlias); });
   }
   if (state.tab === 'reference') {
     const searchEl = document.getElementById('ref-search');
@@ -1580,6 +1636,53 @@ async function addCategoryRow() {
 }
 
 // ---------------------------------------------------------------
+// CRUD: code aliases (ánh xạ mã chuyên đề)
+// ---------------------------------------------------------------
+async function saveAliasField(idx, field, value) {
+  const a = state.codeAliases[idx];
+  if (field === 'alias_code') {
+    // alias_code là khoá chính — đổi tên nghĩa là xoá dòng cũ, tạo dòng mới
+    const { error } = await sb.from('bhyt_code_aliases').delete().eq('alias_code', a.alias_code);
+    if (error) { alert('Lỗi: ' + error.message); return; }
+    const { data, error: err2 } = await sb.from('bhyt_code_aliases').insert({ alias_code: value, canonical_code: a.canonical_code, note: a.note }).select().single();
+    if (err2) { alert('Lỗi: ' + err2.message); return; }
+    state.codeAliases[idx] = data;
+    renderTab();
+    return;
+  }
+  await sb.from('bhyt_code_aliases').update({ [field]: value }).eq('alias_code', a.alias_code);
+  a[field] = value;
+}
+async function deleteAlias(aliasCode) {
+  await sb.from('bhyt_code_aliases').delete().eq('alias_code', aliasCode);
+  state.codeAliases = state.codeAliases.filter((a) => a.alias_code !== aliasCode);
+  renderTab();
+}
+async function addAliasRow() {
+  const aliasCode = prompt('Mã kỳ này (mã cần quy đổi):');
+  if (!aliasCode) return;
+  const canonicalCode = prompt('Quy về mã chuẩn nào?');
+  if (!canonicalCode) return;
+  const { data, error } = await sb.from('bhyt_code_aliases').insert({ alias_code: aliasCode.trim(), canonical_code: canonicalCode.trim(), note: '' }).select().single();
+  if (error) { alert('Lỗi khi thêm: ' + error.message); return; }
+  state.codeAliases.push(data);
+  renderTab();
+}
+async function applyAliasesToExisting() {
+  if (state.codeAliases.length === 0) { alert('Chưa có ánh xạ nào để áp dụng.'); return; }
+  if (!confirm(`Áp dụng ${state.codeAliases.length} ánh xạ cho toàn bộ dữ liệu đã có? Các dòng có mã trùng "Mã kỳ này" sẽ được đổi thành "Mã chuẩn" tương ứng. Không thể hoàn tác.`)) return;
+  let totalUpdated = 0;
+  for (const a of state.codeAliases) {
+    const { error, count } = await sb.from('bhyt_lines').update({ code: a.canonical_code }, { count: 'exact' }).eq('code', a.alias_code);
+    if (error) { alert(`Lỗi khi áp dụng ánh xạ ${a.alias_code} → ${a.canonical_code}: ` + error.message); continue; }
+    totalUpdated += count || 0;
+  }
+  await loadAll();
+  alert(`Đã cập nhật ${totalUpdated} dòng theo ánh xạ.`);
+  renderTab();
+}
+
+// ---------------------------------------------------------------
 // CRUD: reference
 // ---------------------------------------------------------------
 function readReferenceForm() {
@@ -1638,7 +1741,7 @@ async function handleImport(e) {
         cost: Number(r['Chi phí']) || 0,
         service: String(r['Dịch vụ'] || '').trim(),
         error_desc: String(r['Lỗi'] || '').trim(),
-        code: String(r['Phụ lục'] || '').trim(),
+        code: resolveCode(String(r['Phụ lục'] || '').trim()),
         cause: String(r['Nguyên nhân'] || '').trim() || null,
         remediator: String(r['Người khắc phục'] || r['Phụ trách khắc phục chính'] || '').trim(),
         link_code: String(r['Mã LK'] || '').trim(),
