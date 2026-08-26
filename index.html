@@ -101,7 +101,7 @@ let state = {
   refSearch: '', refGroup: 'ALL', refSource: 'ALL', refExpanded: new Set(), refAdding: false, refEditingId: null,
   showPwBox: false, pwMsg: null, sidebarOpen: false,
   rateChartRef: null, costRevenueChartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
-  topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null, groupCostChartRef: null, searchResultChartRef: null,
+  topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null, groupCostChartRef: null, searchResultChartRef: null, categoryTrendChartRef: null, overviewCatSearch: '',
 };
 
 // ---------------------------------------------------------------
@@ -595,6 +595,87 @@ function alertsHTML(alerts) {
     </div>`;
 }
 
+// Phạm vi dùng cho tìm kiếm xu hướng chuyên đề: tôn trọng bộ lọc Khoa/Người/Nhóm/Nguyên nhân/Người khắc phục
+// và Năm, nhưng KHÔNG lọc theo 1 Kì cụ thể (vì mục đích là xem xu hướng qua nhiều kì)
+function categoryTrendScope() {
+  const nKhoa = khoaNormalizer(), nBacSi = bacSiNormalizer(), nRem = remediatorNormalizer();
+  let rows = state.lines;
+  if (state.dashYear !== 'ALL') rows = rows.filter((l) => l.year === Number(state.dashYear));
+  if (state.filterKhoa !== 'ALL') rows = rows.filter((l) => nKhoa(l.department) === state.filterKhoa);
+  if (state.filterBacSi !== 'ALL') rows = rows.filter((l) => nBacSi(l.individual) === state.filterBacSi);
+  if (state.filterNhom !== 'ALL') rows = rows.filter((l) => categoryGroupOf(l.code) === state.filterNhom);
+  if (state.filterCause !== 'ALL') rows = rows.filter((l) => (l.cause || '') === state.filterCause);
+  if (state.filterRemediator !== 'ALL') rows = rows.filter((l) => nRem(l.remediator) === state.filterRemediator);
+  return rows;
+}
+function overviewCatSearchAnalyze(term) {
+  const q = term.trim().toLowerCase();
+  if (!q) return null;
+  const rows = categoryTrendScope();
+  const matchingCodes = new Set();
+  rows.forEach((l) => {
+    if (!l.code) return;
+    const name = (categoryNameOf(l.code) || '').toLowerCase();
+    if (l.code.toLowerCase().includes(q) || name.includes(q)) matchingCodes.add(l.code);
+  });
+  if (matchingCodes.size === 0) return { mode: 'none' };
+  const subset = rows.filter((l) => matchingCodes.has(l.code));
+  const map = new Map();
+  subset.forEach((l) => {
+    const k = qKey(l.quarter, l.year);
+    if (!map.has(k)) map.set(k, { key: k, label: `${l.quarter}/${l.year}`, quarter: l.quarter, year: l.year, cost: 0, count: 0 });
+    const r = map.get(k);
+    r.cost += l.cost || 0;
+    r.count += 1;
+  });
+  const series = Array.from(map.values()).sort((a, b) => a.year - b.year || compareKi(a.quarter, b.quarter));
+  return { mode: 'found', codes: Array.from(matchingCodes), rows: subset, series };
+}
+function categoryTrendResultHTML(result) {
+  if (result.mode === 'none') {
+    return `<div class="bg-white border border-slate-200 rounded-lg p-6 text-center text-sm text-slate-400 mb-4">Không tìm thấy chuyên đề nào khớp với "${escapeHtml(state.overviewCatSearch)}"</div>`;
+  }
+  const title = result.codes.map((c) => `${c}${categoryNameOf(c) ? ' — ' + categoryNameOf(c) : ''}`).join(', ');
+  return `
+    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+      <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+        <h3 class="text-sm font-semibold text-slate-700">Xu hướng chuyên đề: ${escapeHtml(title)}</h3>
+        <span class="text-xs text-slate-400">${result.rows.length} dòng qua ${result.series.length} kì</span>
+      </div>
+      <div class="grid lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2" style="height:260px"><canvas id="category-trend-chart"></canvas></div>
+        <div class="overflow-y-auto" style="max-height:260px">
+          <table class="w-full text-sm">
+            <thead class="text-xs text-slate-500 uppercase sticky top-0 bg-white"><tr>
+              <th class="text-left py-1.5">Kì</th><th class="text-right py-1.5">Chi phí</th><th class="text-right py-1.5">Số hồ sơ</th>
+            </tr></thead>
+            <tbody>
+              ${result.series.map((s) => `<tr class="border-t border-slate-100"><td class="py-1.5">${escapeHtml(s.label)}</td><td class="py-1.5 text-right">${fmtVND(s.cost)}</td><td class="py-1.5 text-right">${s.count}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function drawCategoryTrendChart(result) {
+  const ctx = document.getElementById('category-trend-chart');
+  if (state.categoryTrendChartRef) { state.categoryTrendChartRef.destroy(); state.categoryTrendChartRef = null; }
+  if (!ctx || !result || result.mode !== 'found') return;
+  state.categoryTrendChartRef = new Chart(ctx, {
+    type: 'line',
+    data: { labels: result.series.map((s) => s.label), datasets: [
+      { label: 'Chi phí xuất toán (đ)', data: result.series.map((s) => s.cost), borderColor: '#1d4ed8', backgroundColor: '#1d4ed8', tension: 0.25,
+        datalabels: { align: 'top', color: '#1d4ed8', font: { weight: 'bold', size: 10 }, formatter: (v) => fmtVND(v) } },
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 20 } },
+      scales: { y: { title: { display: true, text: 'đ' } } },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) { const s = result.series[elements[0].index]; setQuarterFilterAndStay(s.quarter, s.year); } },
+    },
+  });
+}
+
 function overviewHTML() {
   const years = availableYears();
   const st = scopedTotals();
@@ -605,9 +686,18 @@ function overviewHTML() {
   const trendPct = (previous && previous.finalizedCost) ? ((current.finalizedCost - previous.finalizedCost) / previous.finalizedCost) * 100 : null;
   const alerts = currentPeriodAlerts();
   const vsTarget = st.rateVsRevenue !== null ? (st.rateVsRevenue - TARGET_RATE) * 100 : null;
+  const overviewCatSearchResult = overviewCatSearchAnalyze(state.overviewCatSearch);
+  state._overviewCatSearchResult = overviewCatSearchResult;
 
   return `
     ${alerts ? alertsHTML(alerts) : ''}
+    <div class="bg-white border border-slate-200 rounded-lg p-3 mb-4">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Theo dõi xu hướng 1 chuyên đề</span>
+        <input id="overview-cat-search" type="text" placeholder="Nhập mã hoặc tên chuyên đề (VD: GĐ_024, chấm công...)" value="${escapeHtml(state.overviewCatSearch)}" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[260px]" />
+      </div>
+    </div>
+    ${overviewCatSearchResult ? categoryTrendResultHTML(overviewCatSearchResult) : ''}
     <div class="bg-white border border-slate-200 rounded-lg p-3 mb-4 flex flex-wrap items-center gap-3">
       <span class="text-xs font-medium text-slate-500 uppercase">Lọc theo</span>
       <select id="dash-year" class="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
@@ -648,44 +738,45 @@ function overviewHTML() {
       ${statCard('Mục tiêu ≤ ' + fmtPct(TARGET_RATE), vsTarget === null ? '—' : (vsTarget > 0 ? `Cao hơn ${vsTarget.toFixed(2)}%` : `Thấp hơn ${Math.abs(vsTarget).toFixed(2)}%`), vsTarget === null ? 'slate' : (vsTarget > 0 ? 'red' : 'emerald'))}
     </div>
 
-    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-      <div class="bg-white border border-slate-200 rounded-lg p-3">
-        <h3 class="text-xs font-semibold text-slate-700 mb-1.5">Tỉ lệ xuất toán theo kì</h3>
-        <div style="height:140px"><canvas id="rate-chart"></canvas></div>
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ xuất toán theo kì</h3>
+        <div style="height:260px"><canvas id="rate-chart"></canvas></div>
       </div>
-      <div class="bg-white border border-slate-200 rounded-lg p-3">
-        <h3 class="text-xs font-semibold text-slate-700 mb-1.5">Chi phí xuất toán &amp; Doanh thu BHYT theo kì</h3>
-        <div style="height:140px"><canvas id="cost-revenue-chart"></canvas></div>
-      </div>
-      <div class="bg-white border border-slate-200 rounded-lg p-3">
-        <h3 class="text-xs font-semibold text-slate-700 mb-1.5">Tỉ lệ chi phí xuất toán theo nhóm</h3>
-        <div style="height:140px"><canvas id="group-cost-chart"></canvas></div>
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Chi phí xuất toán &amp; Doanh thu BHYT theo kì</h3>
+        <div style="height:260px"><canvas id="cost-revenue-chart"></canvas></div>
       </div>
     </div>
 
+    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+      <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ chi phí xuất toán theo nhóm</h3>
+      <div style="height:280px"><canvas id="group-cost-chart"></canvas></div>
+    </div>
+
     <div class="grid md:grid-cols-2 gap-4 mb-4">
-      <div class="bg-white border border-slate-200 rounded-lg p-3">
-        <div class="flex items-center justify-between flex-wrap gap-1 mb-1.5">
-          <h3 class="text-xs font-semibold text-slate-700">Xu hướng so với kì trước${current ? ` (${current.label}${previous ? ' vs ' + previous.label : ''})` : ''}</h3>
-          ${trendPct !== null ? `<span class="text-xs font-semibold ${trendPct > 0 ? 'text-orange-600' : trendPct < 0 ? 'text-emerald-600' : 'text-slate-500'}">${trendPct > 0 ? '▲' : trendPct < 0 ? '▼' : '—'} ${Math.abs(trendPct).toFixed(1)}%</span>` : ''}
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <div class="flex items-center justify-between flex-wrap gap-1 mb-2">
+          <h3 class="text-sm font-semibold text-slate-700">Xu hướng so với kì trước${current ? ` (${current.label}${previous ? ' vs ' + previous.label : ''})` : ''}</h3>
+          ${trendPct !== null ? `<span class="text-sm font-semibold ${trendPct > 0 ? 'text-orange-600' : trendPct < 0 ? 'text-emerald-600' : 'text-slate-500'}">${trendPct > 0 ? '▲' : trendPct < 0 ? '▼' : '—'} ${Math.abs(trendPct).toFixed(1)}%</span>` : ''}
         </div>
-        ${!previous ? '<div class="text-xs text-slate-400 py-6 text-center">Chưa đủ dữ liệu 2 kỳ liên tiếp để so sánh</div>' : '<div style="height:150px"><canvas id="trend-chart"></canvas></div>'}
+        ${!previous ? '<div class="text-sm text-slate-400 py-6 text-center">Chưa đủ dữ liệu 2 kỳ liên tiếp để so sánh</div>' : '<div style="height:240px"><canvas id="trend-chart"></canvas></div>'}
       </div>
-      <div class="bg-white border border-slate-200 rounded-lg p-3">
-        <div class="flex items-center justify-between flex-wrap gap-1 mb-1.5">
-          <h3 class="text-xs font-semibold text-slate-700">Pareto: 10 chuyên đề chi phí nhiều nhất</h3>
-          <div class="flex text-[11px] rounded-md border border-slate-300 overflow-hidden">
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <div class="flex items-center justify-between flex-wrap gap-1 mb-2">
+          <h3 class="text-sm font-semibold text-slate-700">Pareto: 10 chuyên đề chi phí nhiều nhất</h3>
+          <div class="flex text-xs rounded-md border border-slate-300 overflow-hidden">
             <button data-pareto-scope="filtered" class="px-2 py-1 ${state.paretoScope === 'filtered' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Theo lọc</button>
             <button data-pareto-scope="cumulative" class="px-2 py-1 ${state.paretoScope === 'cumulative' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Luỹ kế</button>
           </div>
         </div>
-        <div style="height:150px"><canvas id="pareto-cost-chart"></canvas></div>
+        <div style="height:240px"><canvas id="pareto-cost-chart"></canvas></div>
       </div>
     </div>
 
     <div class="bg-white border border-slate-200 rounded-lg p-3">
       <h3 class="text-xs font-semibold text-slate-700 mb-1.5">Chuyên đề lặp lại nhiều nhất (tất cả các kì)</h3>
-      ${topRepeated.length === 0 ? '<div class="text-xs text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `<div style="height:${Math.max(140, topRepeated.length * 28)}px"><canvas id="top-repeated-cat-chart"></canvas></div>`}
+      ${topRepeated.length === 0 ? '<div class="text-xs text-slate-400 py-8 text-center">Chưa có dữ liệu</div>' : `<div style="height:${Math.max(200, topRepeated.length * 36)}px"><canvas id="top-repeated-cat-chart"></canvas></div>`}
     </div>
   `;
 }
@@ -854,7 +945,7 @@ function drawGroupCostChart() {
     },
   });
 }
-function drawAllOverviewCharts() { drawRateChart(); drawCostRevenueChart(); drawGroupCostChart(); drawTrendChart(); drawParetoCharts(); drawTopRepeatedCatChart(); }
+function drawAllOverviewCharts() { drawRateChart(); drawCostRevenueChart(); drawGroupCostChart(); drawTrendChart(); drawParetoCharts(); drawTopRepeatedCatChart(); drawCategoryTrendChart(state._overviewCatSearchResult); }
 
 // ---------------------------------------------------------------
 // DETAILS TAB (editable lines table)
@@ -1506,6 +1597,11 @@ function guideHTML() {
 // ---------------------------------------------------------------
 function attachTabEvents() {
   if (state.tab === 'overview') {
+    const catSearchEl = document.getElementById('overview-cat-search');
+    if (catSearchEl) {
+      catSearchEl.addEventListener('input', (e) => { state.overviewCatSearch = e.target.value; renderTab(); });
+      const val = catSearchEl.value; catSearchEl.focus(); catSearchEl.value = ''; catSearchEl.value = val;
+    }
     const yearEl = document.getElementById('dash-year');
     if (yearEl) yearEl.onchange = (e) => { state.dashYear = e.target.value; renderTab(); };
     const quarterEl = document.getElementById('dash-quarter');
