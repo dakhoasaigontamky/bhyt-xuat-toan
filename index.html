@@ -91,7 +91,7 @@ function buildNormalizer(values) {
 
 let state = {
   user: null, role: 'viewer',
-  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [],
+  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [],
   tab: 'overview',
   dashYear: 'ALL', dashQuarter: 'ALL', paretoScope: 'filtered',
   filterKhoa: 'ALL', filterBacSi: 'ALL', filterNhom: 'ALL', filterCause: 'ALL', filterRemediator: 'ALL',
@@ -101,7 +101,7 @@ let state = {
   refSearch: '', refGroup: 'ALL', refSource: 'ALL', refExpanded: new Set(), refAdding: false, refEditingId: null,
   showPwBox: false, pwMsg: null, sidebarOpen: false,
   rateChartRef: null, costRevenueChartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
-  topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null, groupCostChartRef: null, searchResultChartRef: null, categoryTrendChartRef: null, overviewCatSearch: '',
+  topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null, groupCostChartRef: null, khoaCostChartRef: null, searchResultChartRef: null, categoryTrendChartRef: null, overviewCatSearch: '',
 };
 
 // ---------------------------------------------------------------
@@ -165,7 +165,7 @@ async function afterLogin(session) {
 }
 async function logout() {
   await sb.auth.signOut();
-  state = { ...state, user: null, role: 'viewer', lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], tab: 'overview' };
+  state = { ...state, user: null, role: 'viewer', lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], tab: 'overview' };
 }
 async function handleChangePassword() {
   const newPw = document.getElementById('pw-new').value;
@@ -201,13 +201,14 @@ async function fetchAllRows(table, orderCols, filterFn) {
 }
 
 async function loadAll() {
-  const [lines, trash, pers, cats, refs, aliases] = await Promise.all([
+  const [lines, trash, pers, cats, refs, aliases, khoaAliases] = await Promise.all([
     fetchAllRows('bhyt_lines', null, (q) => q.is('deleted_at', null)),
     fetchAllRows('bhyt_lines', ['deleted_at'], (q) => q.not('deleted_at', 'is', null)),
     fetchAllRows('bhyt_periods', ['year', 'quarter']),
     fetchAllRows('bhyt_categories', ['code']),
     fetchAllRows('bhyt_reference', ['phu_luc', 'stt']),
     fetchAllRows('bhyt_code_aliases', ['alias_code']),
+    fetchAllRows('bhyt_khoa_aliases', ['alias_name']),
   ]);
   state.lines = lines || [];
   state.trash = trash || [];
@@ -215,9 +216,22 @@ async function loadAll() {
   state.categories = cats || [];
   state.reference = refs || [];
   state.codeAliases = aliases || [];
-  state.khoaNorm = buildNormalizer(state.lines.map((l) => l.department));
+  state.khoaAliases = khoaAliases || [];
+  state.khoaNorm = buildKhoaNormalizer();
   state.bacSiNorm = buildNormalizer(state.lines.map((l) => l.individual));
   state.remediatorNorm = buildNormalizer(state.lines.map((l) => l.remediator));
+}
+// Quy 1 tên Khoa về đúng tên chuẩn đã khai báo trong Ánh xạ tên Khoa (nếu có), giữ nguyên nếu chưa khai báo
+function resolveKhoaAlias(name) {
+  const n = String(name || '').trim();
+  if (!n) return n;
+  const alias = state.khoaAliases.find((a) => a.alias_name === n);
+  return alias ? alias.canonical_name : n;
+}
+// Chuẩn hoá tên Khoa: gộp hoa/thường trước (buildNormalizer), rồi áp ánh xạ thủ công (bhyt_khoa_aliases)
+function buildKhoaNormalizer() {
+  const caseNorm = buildNormalizer(state.lines.map((l) => l.department));
+  return (raw) => resolveKhoaAlias(caseNorm(raw));
 }
 
 // Quy 1 mã Phụ lục về đúng mã chuẩn đã khai báo trong Ánh xạ mã chuyên đề (nếu có), giữ nguyên nếu chưa khai báo
@@ -241,10 +255,11 @@ function quarterList() {
   return Array.from(map.values()).map((v) => ({ ...v, key: qKey(v.quarter, v.year) }))
     .sort((a, b) => a.year - b.year || compareKi(a.quarter, b.quarter));
 }
-function quarterSummaries() {
+function quarterSummaries(sourceRows) {
+  const src = sourceRows || state.lines;
   const qs = quarterList();
   return qs.map((p) => {
-    const rows = state.lines.filter((l) => l.quarter === p.quarter && l.year === p.year);
+    const rows = src.filter((l) => l.quarter === p.quarter && l.year === p.year);
     const finalizedCost = rows.reduce((s, r) => s + (r.cost || 0), 0);
     return {
       key: p.key, label: `${p.quarter}/${p.year}`, quarter: p.quarter, year: p.year,
@@ -286,9 +301,10 @@ function categoryGroupOf(code) {
   return (c && c.category_group) ? c.category_group : '(chưa phân nhóm)';
 }
 
-function categorySummaries() {
+function categorySummaries(sourceRows) {
+  const src = sourceRows || state.lines;
   const byCode = new Map();
-  state.lines.forEach((l) => {
+  src.forEach((l) => {
     if (!l.code) return;
     if (!byCode.has(l.code)) byCode.set(l.code, { code: l.code, name: categoryNameOf(l.code) || l.error_desc || '', finalizedCost: 0, lineCount: 0, quarters: new Set() });
     const rec = byCode.get(l.code);
@@ -299,10 +315,11 @@ function categorySummaries() {
   return Array.from(byCode.values()).map((r) => ({ ...r, quarterCount: r.quarters.size }));
 }
 
-function groupTotalsForQuarter(q) {
+function groupTotalsForQuarter(q, sourceRows) {
   if (!q) return {};
+  const src = sourceRows || state.lines;
   const totals = {};
-  state.lines.filter((l) => l.quarter === q.quarter && l.year === q.year).forEach((l) => {
+  src.filter((l) => l.quarter === q.quarter && l.year === q.year).forEach((l) => {
     const g = categoryGroupOf(l.code);
     totals[g] = (totals[g] || 0) + (l.cost || 0);
   });
@@ -345,7 +362,7 @@ function paretoData(metric, scope, topN) {
   return sorted.map((r) => { cum += r.value; return { ...r, cumPct: total ? (cum / total) * 100 : 0 }; });
 }
 
-function khoaNormalizer() { return state.khoaNorm || buildNormalizer(state.lines.map((l) => l.department)); }
+function khoaNormalizer() { return state.khoaNorm || buildKhoaNormalizer(); }
 function bacSiNormalizer() { return state.bacSiNorm || buildNormalizer(state.lines.map((l) => l.individual)); }
 function remediatorNormalizer() { return state.remediatorNorm || buildNormalizer(state.lines.map((l) => l.remediator)); }
 function khoaList() { const n = khoaNormalizer(); return Array.from(new Set(state.lines.map((l) => n(l.department)).filter(Boolean))).sort(); }
@@ -353,7 +370,13 @@ function bacSiList() { const n = bacSiNormalizer(); return Array.from(new Set(st
 function remediatorList() { const n = remediatorNormalizer(); return Array.from(new Set(state.lines.map((l) => n(l.remediator)).filter(Boolean))).sort(); }
 function nhomList() { return Array.from(new Set(state.categories.map((c) => c.category_group).filter(Boolean))).sort(); }
 
-// Áp dụng toàn bộ bộ lọc (năm/kỳ/khoa/bác sĩ/nhóm lỗi/nguyên nhân/người khắc phục) lên danh sách dòng dữ liệu gốc
+// Áp dụng toàn bộ bộ lọc (năm/kỳ/khoa/bác sĩ/nhóm lỗi/nguyên nhân/người khắc phục/tìm kiếm chuyên đề) lên danh sách dòng dữ liệu gốc
+function categoryMatchesSearch(code) {
+  const q = state.overviewCatSearch.trim().toLowerCase();
+  if (!q) return true;
+  const name = (categoryNameOf(code) || '').toLowerCase();
+  return (code || '').toLowerCase().includes(q) || name.includes(q);
+}
 function scopedLines() {
   const nKhoa = khoaNormalizer(), nBacSi = bacSiNormalizer(), nRem = remediatorNormalizer();
   let rows = state.lines;
@@ -364,6 +387,20 @@ function scopedLines() {
   if (state.filterNhom !== 'ALL') rows = rows.filter((l) => categoryGroupOf(l.code) === state.filterNhom);
   if (state.filterCause !== 'ALL') rows = rows.filter((l) => (l.cause || '') === state.filterCause);
   if (state.filterRemediator !== 'ALL') rows = rows.filter((l) => nRem(l.remediator) === state.filterRemediator);
+  rows = rows.filter((l) => categoryMatchesSearch(l.code));
+  return rows;
+}
+// Giống scopedLines nhưng KHÔNG lọc theo 1 Kì cụ thể — dùng cho các biểu đồ xu hướng nhiều kì ở Tổng quan
+function overviewTrendScope() {
+  const nKhoa = khoaNormalizer(), nBacSi = bacSiNormalizer(), nRem = remediatorNormalizer();
+  let rows = state.lines;
+  if (state.dashYear !== 'ALL') rows = rows.filter((l) => l.year === Number(state.dashYear));
+  if (state.filterKhoa !== 'ALL') rows = rows.filter((l) => nKhoa(l.department) === state.filterKhoa);
+  if (state.filterBacSi !== 'ALL') rows = rows.filter((l) => nBacSi(l.individual) === state.filterBacSi);
+  if (state.filterNhom !== 'ALL') rows = rows.filter((l) => categoryGroupOf(l.code) === state.filterNhom);
+  if (state.filterCause !== 'ALL') rows = rows.filter((l) => (l.cause || '') === state.filterCause);
+  if (state.filterRemediator !== 'ALL') rows = rows.filter((l) => nRem(l.remediator) === state.filterRemediator);
+  rows = rows.filter((l) => categoryMatchesSearch(l.code));
   return rows;
 }
 function scopedTotals() {
@@ -595,33 +632,15 @@ function alertsHTML(alerts) {
     </div>`;
 }
 
-// Phạm vi dùng cho tìm kiếm xu hướng chuyên đề: tôn trọng bộ lọc Khoa/Người/Nhóm/Nguyên nhân/Người khắc phục
-// và Năm, nhưng KHÔNG lọc theo 1 Kì cụ thể (vì mục đích là xem xu hướng qua nhiều kì)
-function categoryTrendScope() {
-  const nKhoa = khoaNormalizer(), nBacSi = bacSiNormalizer(), nRem = remediatorNormalizer();
-  let rows = state.lines;
-  if (state.dashYear !== 'ALL') rows = rows.filter((l) => l.year === Number(state.dashYear));
-  if (state.filterKhoa !== 'ALL') rows = rows.filter((l) => nKhoa(l.department) === state.filterKhoa);
-  if (state.filterBacSi !== 'ALL') rows = rows.filter((l) => nBacSi(l.individual) === state.filterBacSi);
-  if (state.filterNhom !== 'ALL') rows = rows.filter((l) => categoryGroupOf(l.code) === state.filterNhom);
-  if (state.filterCause !== 'ALL') rows = rows.filter((l) => (l.cause || '') === state.filterCause);
-  if (state.filterRemediator !== 'ALL') rows = rows.filter((l) => nRem(l.remediator) === state.filterRemediator);
-  return rows;
-}
 function overviewCatSearchAnalyze(term) {
   const q = term.trim().toLowerCase();
   if (!q) return null;
-  const rows = categoryTrendScope();
-  const matchingCodes = new Set();
-  rows.forEach((l) => {
-    if (!l.code) return;
-    const name = (categoryNameOf(l.code) || '').toLowerCase();
-    if (l.code.toLowerCase().includes(q) || name.includes(q)) matchingCodes.add(l.code);
-  });
-  if (matchingCodes.size === 0) return { mode: 'none' };
-  const subset = rows.filter((l) => matchingCodes.has(l.code));
+  const rows = overviewTrendScope(); // đã lọc đúng theo search term này + mọi bộ lọc khác đang bật
+  if (rows.length === 0) return { mode: 'none' };
+  const matchingCodes = Array.from(new Set(rows.map((l) => l.code).filter(Boolean)));
+  if (matchingCodes.length === 0) return { mode: 'none' };
   const map = new Map();
-  subset.forEach((l) => {
+  rows.forEach((l) => {
     const k = qKey(l.quarter, l.year);
     if (!map.has(k)) map.set(k, { key: k, label: `${l.quarter}/${l.year}`, quarter: l.quarter, year: l.year, cost: 0, count: 0 });
     const r = map.get(k);
@@ -629,75 +648,30 @@ function overviewCatSearchAnalyze(term) {
     r.count += 1;
   });
   const series = Array.from(map.values()).sort((a, b) => a.year - b.year || compareKi(a.quarter, b.quarter));
-  return { mode: 'found', codes: Array.from(matchingCodes), rows: subset, series };
-}
-function categoryTrendResultHTML(result) {
-  if (result.mode === 'none') {
-    return `<div class="bg-white border border-slate-200 rounded-lg p-6 text-center text-sm text-slate-400 mb-4">Không tìm thấy chuyên đề nào khớp với "${escapeHtml(state.overviewCatSearch)}"</div>`;
-  }
-  const title = result.codes.map((c) => `${c}${categoryNameOf(c) ? ' — ' + categoryNameOf(c) : ''}`).join(', ');
-  return `
-    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4">
-      <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
-        <h3 class="text-sm font-semibold text-slate-700">Xu hướng chuyên đề: ${escapeHtml(title)}</h3>
-        <span class="text-xs text-slate-400">${result.rows.length} dòng qua ${result.series.length} kì</span>
-      </div>
-      <div class="grid lg:grid-cols-3 gap-4">
-        <div class="lg:col-span-2" style="height:260px"><canvas id="category-trend-chart"></canvas></div>
-        <div class="overflow-y-auto" style="max-height:260px">
-          <table class="w-full text-sm">
-            <thead class="text-xs text-slate-500 uppercase sticky top-0 bg-white"><tr>
-              <th class="text-left py-1.5">Kì</th><th class="text-right py-1.5">Chi phí</th><th class="text-right py-1.5">Số hồ sơ</th>
-            </tr></thead>
-            <tbody>
-              ${result.series.map((s) => `<tr class="border-t border-slate-100"><td class="py-1.5">${escapeHtml(s.label)}</td><td class="py-1.5 text-right">${fmtVND(s.cost)}</td><td class="py-1.5 text-right">${s.count}</td></tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  `;
-}
-function drawCategoryTrendChart(result) {
-  const ctx = document.getElementById('category-trend-chart');
-  if (state.categoryTrendChartRef) { state.categoryTrendChartRef.destroy(); state.categoryTrendChartRef = null; }
-  if (!ctx || !result || result.mode !== 'found') return;
-  state.categoryTrendChartRef = new Chart(ctx, {
-    type: 'line',
-    data: { labels: result.series.map((s) => s.label), datasets: [
-      { label: 'Chi phí xuất toán (đ)', data: result.series.map((s) => s.cost), borderColor: '#1d4ed8', backgroundColor: '#1d4ed8', tension: 0.25,
-        datalabels: { align: 'top', color: '#1d4ed8', font: { weight: 'bold', size: 10 }, formatter: (v) => fmtVND(v) } },
-    ] },
-    options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 20 } },
-      scales: { y: { title: { display: true, text: 'đ' } } },
-      onHover: onHoverPointer,
-      onClick: (evt, elements) => { if (elements.length) { const s = result.series[elements[0].index]; setQuarterFilterAndStay(s.quarter, s.year); } },
-    },
-  });
+  return { mode: 'found', codes: matchingCodes, rows, series };
 }
 
 function overviewHTML() {
   const years = availableYears();
   const st = scopedTotals();
-  const cats = categorySummaries();
+  const cats = categorySummaries(overviewTrendScope());
   const topRepeated = [...cats].filter((c) => c.quarterCount > 0).sort((a, b) => b.quarterCount - a.quarterCount).slice(0, 10);
   state._topRepeatedCat = topRepeated;
   const { current, previous } = currentAndPreviousPeriod();
   const trendPct = (previous && previous.finalizedCost) ? ((current.finalizedCost - previous.finalizedCost) / previous.finalizedCost) * 100 : null;
   const alerts = currentPeriodAlerts();
   const vsTarget = st.rateVsRevenue !== null ? (st.rateVsRevenue - TARGET_RATE) * 100 : null;
-  const overviewCatSearchResult = overviewCatSearchAnalyze(state.overviewCatSearch);
-  state._overviewCatSearchResult = overviewCatSearchResult;
+  const searchResultInfo = overviewCatSearchAnalyze(state.overviewCatSearch);
 
   return `
     ${alerts ? alertsHTML(alerts) : ''}
     <div class="bg-white border border-slate-200 rounded-lg p-3 mb-4">
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="text-xs font-medium text-slate-500 uppercase whitespace-nowrap">Theo dõi xu hướng 1 chuyên đề</span>
+        <span class="text-xs font-medium text-slate-500 uppercase whitespace-nowrap">🔎 Tìm kiếm chuyên đề</span>
         <input id="overview-cat-search" type="text" placeholder="Nhập mã hoặc tên chuyên đề (VD: GĐ_024, chấm công...)" value="${escapeHtml(state.overviewCatSearch)}" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[260px]" />
+        ${state.overviewCatSearch.trim() ? `<span class="text-xs ${searchResultInfo && searchResultInfo.mode === 'found' ? 'text-blue-700' : 'text-red-500'} whitespace-nowrap">${searchResultInfo && searchResultInfo.mode === 'found' ? `Đang lọc theo: ${searchResultInfo.codes.join(', ')} — mọi thẻ số liệu/biểu đồ bên dưới đã áp dụng` : 'Không tìm thấy chuyên đề nào khớp'}</span>` : ''}
       </div>
     </div>
-    ${overviewCatSearchResult ? categoryTrendResultHTML(overviewCatSearchResult) : ''}
     <div class="bg-white border border-slate-200 rounded-lg p-3 mb-4 flex flex-wrap items-center gap-3">
       <span class="text-xs font-medium text-slate-500 uppercase">Lọc theo</span>
       <select id="dash-year" class="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
@@ -749,9 +723,15 @@ function overviewHTML() {
       </div>
     </div>
 
-    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4">
-      <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ chi phí xuất toán theo nhóm</h3>
-      <div style="height:280px"><canvas id="group-cost-chart"></canvas></div>
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ chi phí xuất toán theo nhóm</h3>
+        <div style="height:300px"><canvas id="group-cost-chart"></canvas></div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tỉ lệ chi phí xuất toán theo Khoa</h3>
+        <div style="height:300px"><canvas id="khoa-cost-chart"></canvas></div>
+      </div>
     </div>
 
     <div class="grid md:grid-cols-2 gap-4 mb-4">
@@ -802,7 +782,7 @@ function onHoverPointer(evt, elements) {
 }
 
 function drawRateChart() {
-  const qs = quarterSummaries();
+  const qs = quarterSummaries(overviewTrendScope());
   const ctx = document.getElementById('rate-chart');
   if (!ctx) return;
   if (state.rateChartRef) state.rateChartRef.destroy();
@@ -827,7 +807,7 @@ function drawRateChart() {
   });
 }
 function drawCostRevenueChart() {
-  const qs = quarterSummaries();
+  const qs = quarterSummaries(overviewTrendScope());
   const ctx = document.getElementById('cost-revenue-chart');
   if (!ctx) return;
   if (state.costRevenueChartRef) state.costRevenueChartRef.destroy();
@@ -857,8 +837,9 @@ function drawTrendChart() {
   const { current, previous } = currentAndPreviousPeriod();
   const ctx = document.getElementById('trend-chart');
   if (!ctx || !previous) return;
-  const prevTotals = groupTotalsForQuarter(previous);
-  const curTotals = groupTotalsForQuarter(current);
+  const scope = overviewTrendScope();
+  const prevTotals = groupTotalsForQuarter(previous, scope);
+  const curTotals = groupTotalsForQuarter(current, scope);
   const groups = Array.from(new Set([...Object.keys(prevTotals), ...Object.keys(curTotals)])).sort((a, b) => (curTotals[b] || 0) - (curTotals[a] || 0));
   if (state.trendChartRef) state.trendChartRef.destroy();
   state.trendChartRef = new Chart(ctx, {
@@ -918,6 +899,57 @@ function drawTopRepeatedCatChart() {
     },
   });
 }
+// Plugin dùng chung cho biểu đồ tròn: đưa % ra ngoài rìa, kèm đường dẫn nối về đúng phần, chữ màu đen
+function outsideLabelPlugin() {
+  return {
+    id: 'outsideLabelPlugin',
+    afterDraw(chart) {
+      const { ctx } = chart;
+      const meta = chart.getDatasetMeta(0);
+      const dataArr = chart.data.datasets[0].data;
+      const total = dataArr.reduce((a, b) => a + b, 0);
+      if (!total) return;
+      meta.data.forEach((arc, i) => {
+        const value = dataArr[i];
+        if (!value) return;
+        const pct = ((value / total) * 100).toFixed(1) + '%';
+        const angle = (arc.startAngle + arc.endAngle) / 2;
+        const cx = arc.x, cy = arc.y;
+        const outerR = arc.outerRadius;
+        const x1 = cx + Math.cos(angle) * outerR;
+        const y1 = cy + Math.sin(angle) * outerR;
+        const midR = outerR + 14;
+        const x2 = cx + Math.cos(angle) * midR;
+        const y2 = cy + Math.sin(angle) * midR;
+        const dir = Math.cos(angle) >= 0 ? 1 : -1;
+        const x3 = x2 + dir * 16;
+        ctx.save();
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.lineTo(x3, y2);
+        ctx.stroke();
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = dir > 0 ? 'left' : 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(pct, x3 + dir * 3, y2);
+        ctx.restore();
+      });
+    },
+  };
+}
+function khoaCostBreakdown() {
+  const nKhoa = khoaNormalizer();
+  const totals = {};
+  scopedLines().forEach((l) => {
+    const k = nKhoa(l.department) || '(chưa xác định)';
+    totals[k] = (totals[k] || 0) + (l.cost || 0);
+  });
+  return totals;
+}
 function drawGroupCostChart() {
   const ctx = document.getElementById('group-cost-chart');
   if (state.groupCostChartRef) { state.groupCostChartRef.destroy(); state.groupCostChartRef = null; }
@@ -926,26 +958,49 @@ function drawGroupCostChart() {
   const labels = Object.keys(totals).filter((k) => totals[k] > 0);
   if (labels.length === 0) return;
   const values = labels.map((l) => totals[l]);
-  const total = values.reduce((s, v) => s + v, 0);
   const palette = ['#1e3a8a', '#0d9488', '#d97706', '#7c3aed', '#0891b2', '#65a30d', '#be185d', '#475569', '#ea580c', '#4338ca'];
   state.groupCostChartRef = new Chart(ctx, {
     type: 'doughnut',
     data: { labels, datasets: [{ data: values, backgroundColor: labels.map((_, i) => palette[i % palette.length]), borderWidth: 2, borderColor: '#fff' }] },
+    plugins: [outsideLabelPlugin()],
     options: {
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 24, bottom: 24, left: 70, right: 70 } },
       plugins: {
         legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 14 } },
-        datalabels: {
-          color: '#fff', font: { weight: 'bold', size: 11 },
-          formatter: (v) => total ? ((v / total) * 100).toFixed(1) + '%' : '',
-        },
+        datalabels: { display: false },
       },
       onHover: onHoverPointer,
       onClick: (evt, elements) => { if (elements.length) setNhomFilterAndStay(labels[elements[0].index]); },
     },
   });
 }
-function drawAllOverviewCharts() { drawRateChart(); drawCostRevenueChart(); drawGroupCostChart(); drawTrendChart(); drawParetoCharts(); drawTopRepeatedCatChart(); drawCategoryTrendChart(state._overviewCatSearchResult); }
+function drawKhoaCostChart() {
+  const ctx = document.getElementById('khoa-cost-chart');
+  if (state.khoaCostChartRef) { state.khoaCostChartRef.destroy(); state.khoaCostChartRef = null; }
+  if (!ctx) return;
+  const totals = khoaCostBreakdown();
+  const labels = Object.keys(totals).filter((k) => totals[k] > 0).sort((a, b) => totals[b] - totals[a]);
+  if (labels.length === 0) return;
+  const values = labels.map((l) => totals[l]);
+  const palette = ['#1e3a8a', '#0d9488', '#d97706', '#7c3aed', '#0891b2', '#65a30d', '#be185d', '#475569', '#ea580c', '#4338ca'];
+  state.khoaCostChartRef = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: values, backgroundColor: labels.map((_, i) => palette[i % palette.length]), borderWidth: 2, borderColor: '#fff' }] },
+    plugins: [outsideLabelPlugin()],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 24, bottom: 24, left: 70, right: 70 } },
+      plugins: {
+        legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 14 } },
+        datalabels: { display: false },
+      },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) { state.filterKhoa = labels[elements[0].index]; renderTab(); } },
+    },
+  });
+}
+function drawAllOverviewCharts() { drawRateChart(); drawCostRevenueChart(); drawGroupCostChart(); drawKhoaCostChart(); drawTrendChart(); drawParetoCharts(); drawTopRepeatedCatChart(); }
 
 // ---------------------------------------------------------------
 // DETAILS TAB (editable lines table)
@@ -1456,6 +1511,28 @@ function setupHTML() {
           </tbody>
         </table>
       </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-4 lg:col-span-2">
+        <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-700">Ánh xạ tên Khoa (khi tên khoa bị gõ lệch nhau)</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Cùng 1 khoa nhưng bị gõ khác nhau (thiếu/thừa dấu gạch, viết tắt khác...)? Khai báo "tên trong dữ liệu = tên chuẩn" ở đây để mọi thống kê gộp đúng lại thành 1 khoa.</p>
+          </div>
+          ${canEdit ? '<div class="flex gap-2"><button id="btn-add-khoa-alias" class="text-blue-800 hover:text-blue-600 text-sm font-medium whitespace-nowrap">+ Thêm ánh xạ</button><button id="btn-apply-khoa-aliases" class="text-amber-700 hover:text-amber-800 text-sm font-medium whitespace-nowrap">Áp dụng cho dữ liệu đã có</button></div>' : ''}
+        </div>
+        <table class="w-full text-sm">
+          <thead class="text-xs text-slate-500 uppercase"><tr><th class="text-left py-1">Tên trong dữ liệu (alias)</th><th class="text-left py-1">Tên chuẩn (quy về)</th><th class="text-left py-1">Ghi chú</th><th></th></tr></thead>
+          <tbody>
+            ${state.khoaAliases.map((a, idx) => `
+              <tr class="border-t border-slate-100">
+                <td class="py-1.5"><input ${canEdit ? '' : 'disabled'} type="text" data-ka-idx="${idx}" data-ka-field="alias_name" value="${escapeHtml(a.alias_name)}" class="border border-slate-200 rounded px-1 py-1 w-48" /></td>
+                <td class="py-1.5"><input ${canEdit ? '' : 'disabled'} type="text" data-ka-idx="${idx}" data-ka-field="canonical_name" value="${escapeHtml(a.canonical_name)}" class="border border-slate-200 rounded px-1 py-1 w-48" /></td>
+                <td class="py-1.5"><input ${canEdit ? '' : 'disabled'} type="text" data-ka-idx="${idx}" data-ka-field="note" value="${escapeHtml(a.note || '')}" class="border border-slate-200 rounded px-1 py-1 w-full" /></td>
+                <td class="py-1.5 text-center">${canEdit ? `<button data-del-khoa-alias="${escapeHtml(a.alias_name)}" class="text-slate-400 hover:text-red-600">✕</button>` : ''}</td>
+              </tr>`).join('')}
+            ${state.khoaAliases.length === 0 ? '<tr><td colspan="4" class="text-center text-slate-400 py-6">Chưa có ánh xạ nào</td></tr>' : ''}
+          </tbody>
+        </table>
+      </div>
     </div>
   `;
 }
@@ -1679,6 +1756,12 @@ function attachTabEvents() {
     if (applyAliasBtn) applyAliasBtn.onclick = applyAliasesToExisting;
     document.querySelectorAll('[data-a-idx]').forEach((input) => input.addEventListener('change', () => saveAliasField(Number(input.dataset.aIdx), input.dataset.aField, input.value)));
     document.querySelectorAll('[data-del-alias]').forEach((btn) => { btn.onclick = () => deleteAlias(btn.dataset.delAlias); });
+    const addKhoaAliasBtn = document.getElementById('btn-add-khoa-alias');
+    if (addKhoaAliasBtn) addKhoaAliasBtn.onclick = addKhoaAliasRow;
+    const applyKhoaAliasBtn = document.getElementById('btn-apply-khoa-aliases');
+    if (applyKhoaAliasBtn) applyKhoaAliasBtn.onclick = applyKhoaAliasesToExisting;
+    document.querySelectorAll('[data-ka-idx]').forEach((input) => input.addEventListener('change', () => saveKhoaAliasField(Number(input.dataset.kaIdx), input.dataset.kaField, input.value)));
+    document.querySelectorAll('[data-del-khoa-alias]').forEach((btn) => { btn.onclick = () => deleteKhoaAlias(btn.dataset.delKhoaAlias); });
   }
   if (state.tab === 'trash') {
     document.querySelectorAll('[data-restore-line]').forEach((btn) => { btn.onclick = () => restoreLine(btn.dataset.restoreLine); });
@@ -1932,6 +2015,56 @@ async function applyAliasesToExisting() {
   for (const a of state.codeAliases) {
     const { error, count } = await sb.from('bhyt_lines').update({ code: a.canonical_code }, { count: 'exact' }).eq('code', a.alias_code);
     if (error) { alert(`Lỗi khi áp dụng ánh xạ ${a.alias_code} → ${a.canonical_code}: ` + error.message); continue; }
+    totalUpdated += count || 0;
+  }
+  await loadAll();
+  alert(`Đã cập nhật ${totalUpdated} dòng theo ánh xạ.`);
+  renderTab();
+}
+
+// ---------------------------------------------------------------
+// CRUD: khoa aliases (ánh xạ tên Khoa)
+// ---------------------------------------------------------------
+async function saveKhoaAliasField(idx, field, value) {
+  const a = state.khoaAliases[idx];
+  if (field === 'alias_name') {
+    const { error } = await sb.from('bhyt_khoa_aliases').delete().eq('alias_name', a.alias_name);
+    if (error) { alert('Lỗi: ' + error.message); return; }
+    const { data, error: err2 } = await sb.from('bhyt_khoa_aliases').insert({ alias_name: value, canonical_name: a.canonical_name, note: a.note }).select().single();
+    if (err2) { alert('Lỗi: ' + err2.message); return; }
+    state.khoaAliases[idx] = data;
+    state.khoaNorm = buildKhoaNormalizer();
+    renderTab();
+    return;
+  }
+  await sb.from('bhyt_khoa_aliases').update({ [field]: value }).eq('alias_name', a.alias_name);
+  a[field] = value;
+  state.khoaNorm = buildKhoaNormalizer();
+}
+async function deleteKhoaAlias(aliasName) {
+  await sb.from('bhyt_khoa_aliases').delete().eq('alias_name', aliasName);
+  state.khoaAliases = state.khoaAliases.filter((a) => a.alias_name !== aliasName);
+  state.khoaNorm = buildKhoaNormalizer();
+  renderTab();
+}
+async function addKhoaAliasRow() {
+  const aliasName = prompt('Tên khoa xuất hiện trong dữ liệu (biến thể cần quy đổi):');
+  if (!aliasName) return;
+  const canonicalName = prompt('Quy về tên khoa chuẩn nào?');
+  if (!canonicalName) return;
+  const { data, error } = await sb.from('bhyt_khoa_aliases').insert({ alias_name: aliasName.trim(), canonical_name: canonicalName.trim(), note: '' }).select().single();
+  if (error) { alert('Lỗi khi thêm: ' + error.message); return; }
+  state.khoaAliases.push(data);
+  state.khoaNorm = buildKhoaNormalizer();
+  renderTab();
+}
+async function applyKhoaAliasesToExisting() {
+  if (state.khoaAliases.length === 0) { alert('Chưa có ánh xạ nào để áp dụng.'); return; }
+  if (!confirm(`Áp dụng ${state.khoaAliases.length} ánh xạ cho toàn bộ dữ liệu đã có? Các dòng có tên khoa trùng "Tên trong dữ liệu" sẽ được đổi thành "Tên chuẩn" tương ứng. Không thể hoàn tác.`)) return;
+  let totalUpdated = 0;
+  for (const a of state.khoaAliases) {
+    const { error, count } = await sb.from('bhyt_lines').update({ department: a.canonical_name }, { count: 'exact' }).eq('department', a.alias_name);
+    if (error) { alert(`Lỗi khi áp dụng ánh xạ ${a.alias_name} → ${a.canonical_name}: ` + error.message); continue; }
     totalUpdated += count || 0;
   }
   await loadAll();
