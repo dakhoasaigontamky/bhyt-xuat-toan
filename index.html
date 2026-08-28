@@ -651,6 +651,48 @@ function overviewCatSearchAnalyze(term) {
   return { mode: 'found', codes: matchingCodes, rows, series };
 }
 
+function categoryTrendResultHTML(result) {
+  const title = result.codes.map((c) => `${c}${categoryNameOf(c) ? ' — ' + categoryNameOf(c) : ''}`).join(', ');
+  return `
+    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+      <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+        <h3 class="text-sm font-semibold text-slate-700">Xu hướng chi phí xuất toán: ${escapeHtml(title)}</h3>
+        <span class="text-xs text-slate-400">${result.rows.length} dòng qua ${result.series.length} kì</span>
+      </div>
+      <div class="grid lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2" style="height:260px"><canvas id="category-trend-chart"></canvas></div>
+        <div class="overflow-y-auto" style="max-height:260px">
+          <table class="w-full text-sm">
+            <thead class="text-xs text-slate-500 uppercase sticky top-0 bg-white"><tr>
+              <th class="text-left py-1.5">Kì</th><th class="text-right py-1.5">Chi phí</th><th class="text-right py-1.5">Số hồ sơ</th>
+            </tr></thead>
+            <tbody>
+              ${result.series.map((s) => `<tr class="border-t border-slate-100"><td class="py-1.5">${escapeHtml(s.label)}</td><td class="py-1.5 text-right">${fmtVND(s.cost)}</td><td class="py-1.5 text-right">${s.count}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function drawCategoryTrendChart(result) {
+  const ctx = document.getElementById('category-trend-chart');
+  if (state.categoryTrendChartRef) { state.categoryTrendChartRef.destroy(); state.categoryTrendChartRef = null; }
+  if (!ctx || !result || result.mode !== 'found') return;
+  state.categoryTrendChartRef = new Chart(ctx, {
+    type: 'line',
+    data: { labels: result.series.map((s) => s.label), datasets: [
+      { label: 'Chi phí xuất toán (đ)', data: result.series.map((s) => s.cost), borderColor: '#1d4ed8', backgroundColor: '#1d4ed8', tension: 0.25,
+        datalabels: { align: 'top', color: '#1d4ed8', font: { weight: 'bold', size: 10 }, formatter: (v) => fmtVND(v) } },
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 20 } },
+      scales: { y: { title: { display: true, text: 'đ' } } },
+      onHover: onHoverPointer,
+      onClick: (evt, elements) => { if (elements.length) { const s = result.series[elements[0].index]; setQuarterFilterAndStay(s.quarter, s.year); } },
+    },
+  });
+}
+
 function overviewHTML() {
   const years = availableYears();
   const st = scopedTotals();
@@ -662,6 +704,7 @@ function overviewHTML() {
   const alerts = currentPeriodAlerts();
   const vsTarget = st.rateVsRevenue !== null ? (st.rateVsRevenue - TARGET_RATE) * 100 : null;
   const searchResultInfo = overviewCatSearchAnalyze(state.overviewCatSearch);
+  state._overviewCatSearchResult = searchResultInfo;
 
   return `
     ${alerts ? alertsHTML(alerts) : ''}
@@ -672,6 +715,7 @@ function overviewHTML() {
         ${state.overviewCatSearch.trim() ? `<span class="text-xs ${searchResultInfo && searchResultInfo.mode === 'found' ? 'text-blue-700' : 'text-red-500'} whitespace-nowrap">${searchResultInfo && searchResultInfo.mode === 'found' ? `Đang lọc theo: ${searchResultInfo.codes.join(', ')} — mọi thẻ số liệu/biểu đồ bên dưới đã áp dụng` : 'Không tìm thấy chuyên đề nào khớp'}</span>` : ''}
       </div>
     </div>
+    ${searchResultInfo && searchResultInfo.mode === 'found' ? categoryTrendResultHTML(searchResultInfo) : ''}
     <div class="bg-white border border-slate-200 rounded-lg p-3 mb-4 flex flex-wrap items-center gap-3">
       <span class="text-xs font-medium text-slate-500 uppercase">Lọc theo</span>
       <select id="dash-year" class="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
@@ -1000,7 +1044,7 @@ function drawKhoaCostChart() {
     },
   });
 }
-function drawAllOverviewCharts() { drawRateChart(); drawCostRevenueChart(); drawGroupCostChart(); drawKhoaCostChart(); drawTrendChart(); drawParetoCharts(); drawTopRepeatedCatChart(); }
+function drawAllOverviewCharts() { drawRateChart(); drawCostRevenueChart(); drawGroupCostChart(); drawKhoaCostChart(); drawTrendChart(); drawParetoCharts(); drawTopRepeatedCatChart(); drawCategoryTrendChart(state._overviewCatSearchResult); }
 
 // ---------------------------------------------------------------
 // DETAILS TAB (editable lines table)
