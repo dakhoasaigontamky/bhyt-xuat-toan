@@ -1641,7 +1641,7 @@ function refFormHTML(r) {
       <div class="grid md:grid-cols-2 gap-3 mb-3">
         <div><label class="text-xs text-slate-600">Tên chuyên đề *</label><input data-rf="name" type="text" value="${escapeHtml(v.name)}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
         <div><label class="text-xs text-slate-600">Nguồn chuyên đề</label><select data-rf="source" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm bg-white">${SOURCE_OPTIONS.map((s) => `<option value="${s}" ${v.source === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
-        <div><label class="text-xs text-slate-600">Phụ lục / Nhóm (tự do)</label><input data-rf="phu_luc" type="text" value="${escapeHtml(v.phu_luc)}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Phụ lục</label><select data-rf="phu_luc" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm bg-white"><option value="">— Chọn Phụ lục —</option>${Object.keys(PHU_LUC_LABELS).map((g) => `<option value="${escapeHtml(g)}" ${v.phu_luc === g ? 'selected' : ''}>${escapeHtml(PHU_LUC_LABELS[g])}</option>`).join('')}</select></div>
         <div><label class="text-xs text-slate-600">Nhóm chi tiết (tuỳ chọn)</label><input data-rf="category_group" type="text" value="${escapeHtml(v.category_group)}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
       </div>
       <div class="space-y-2 mb-3">
