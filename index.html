@@ -563,6 +563,7 @@ function navItem(id, label, icon) {
 
 function renderTab() {
   const el = document.getElementById('tab-content');
+  state._focusedBeforeRender = document.activeElement && document.activeElement.id;
   let banner = '';
   if (state.lines.length === 0 && state.periods.length === 0 && !['guide', 'reference', 'setup'].includes(state.tab)) {
     banner = `<div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-4 text-sm">Chưa có dữ liệu. Import file Excel hoặc thêm dữ liệu ở tab "Kỳ & Danh mục" / "Tra cứu theo kì xuất toán".</div>`;
@@ -1591,9 +1592,8 @@ const PHU_LUC_LABELS = {
   'PTTT': 'PL4 · Phẫu thuật thủ thuật', 'CĐHA': 'PL5 · Chẩn đoán hình ảnh', 'XÉT NGHIỆM': 'PL6 · Xét nghiệm',
   'THUỐC': 'PL7 · Thuốc', 'VTYT': 'PL8 · Vật tư y tế', 'DỮ LIỆU, THỦ TỤC HC': 'PL9 · Dữ liệu, thủ tục HC',
 };
-const SOURCE_OPTIONS = ['BHYT chính thức', 'DKTK', 'Tham khảo BV khác'];
+const SOURCE_OPTIONS = ['DKTK', 'Tham khảo BV khác'];
 const SOURCE_COLORS = {
-  'BHYT chính thức': 'bg-blue-50 text-blue-700 border-blue-200',
   'DKTK': 'bg-amber-50 text-amber-700 border-amber-200',
   'Tham khảo BV khác': 'bg-purple-50 text-purple-700 border-purple-200',
 };
@@ -1721,7 +1721,8 @@ function attachTabEvents() {
     const catSearchEl = document.getElementById('overview-cat-search');
     if (catSearchEl) {
       catSearchEl.addEventListener('input', (e) => { state.overviewCatSearch = e.target.value; renderTab(); });
-      const val = catSearchEl.value; catSearchEl.focus(); catSearchEl.value = ''; catSearchEl.value = val;
+      const val = catSearchEl.value;
+      if (state._focusedBeforeRender === 'overview-cat-search') { catSearchEl.focus(); catSearchEl.value = ''; catSearchEl.value = val; }
     }
     const yearEl = document.getElementById('dash-year');
     if (yearEl) yearEl.onchange = (e) => { state.dashYear = e.target.value; renderTab(); };
@@ -1745,7 +1746,8 @@ function attachTabEvents() {
     const searchEl = document.getElementById('details-search');
     if (searchEl) {
       searchEl.addEventListener('input', (e) => { state.detailsSearch = e.target.value; state.detailsPage = 1; renderTab(); });
-      const val = searchEl.value; searchEl.focus(); searchEl.value = ''; searchEl.value = val;
+      const val = searchEl.value;
+      if (state._focusedBeforeRender === 'details-search') { searchEl.focus(); searchEl.value = ''; searchEl.value = val; }
     }
     const addBtn = document.getElementById('btn-add-line');
     if (addBtn) addBtn.onclick = addLineRow;
@@ -1777,7 +1779,8 @@ function attachTabEvents() {
     const hmSearchEl = document.getElementById('heatmap-search');
     if (hmSearchEl) {
       hmSearchEl.addEventListener('input', (e) => { state.heatmapSearch = e.target.value; renderTab(); });
-      const val = hmSearchEl.value; hmSearchEl.focus(); hmSearchEl.value = ''; hmSearchEl.value = val;
+      const val = hmSearchEl.value;
+      if (state._focusedBeforeRender === 'heatmap-search') { hmSearchEl.focus(); hmSearchEl.value = ''; hmSearchEl.value = val; }
     }
   }
   if (state.tab === 'risk') {
@@ -1817,7 +1820,8 @@ function attachTabEvents() {
     const searchEl = document.getElementById('ref-search');
     if (searchEl) {
       searchEl.addEventListener('input', (e) => { state.refSearch = e.target.value; renderTab(); });
-      const val = searchEl.value; searchEl.focus(); searchEl.value = ''; searchEl.value = val;
+      const val = searchEl.value;
+      if (state._focusedBeforeRender === 'ref-search') { searchEl.focus(); searchEl.value = ''; searchEl.value = val; }
     }
     const groupEl = document.getElementById('ref-group');
     if (groupEl) groupEl.onchange = (e) => { state.refGroup = e.target.value; renderTab(); };
