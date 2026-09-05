@@ -91,7 +91,7 @@ function buildNormalizer(values) {
 
 let state = {
   user: null, role: 'viewer',
-  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [],
+  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null,
   tab: 'overview',
   dashYear: 'ALL', dashQuarter: 'ALL', paretoScope: 'filtered',
   filterKhoa: 'ALL', filterBacSi: 'ALL', filterNhom: 'ALL', filterCause: 'ALL', filterRemediator: 'ALL',
@@ -102,6 +102,7 @@ let state = {
   showPwBox: false, pwMsg: null, sidebarOpen: false,
   rateChartRef: null, costRevenueChartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
   topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null, groupCostChartRef: null, khoaCostChartRef: null, searchResultChartRef: null, categoryTrendChartRef: null, overviewCatSearch: '',
+  equipDossierCountChartRef: null, equipDossierRevenueChartRef: null, equipTopKhoaChartRef: null, equipOpStatusChartRef: null,
 };
 
 // ---------------------------------------------------------------
@@ -165,7 +166,7 @@ async function afterLogin(session) {
 }
 async function logout() {
   await sb.auth.signOut();
-  state = { ...state, user: null, role: 'viewer', lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], tab: 'overview' };
+  state = { ...state, user: null, role: 'viewer', lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], tab: 'overview' };
 }
 async function handleChangePassword() {
   const newPw = document.getElementById('pw-new').value;
@@ -201,7 +202,7 @@ async function fetchAllRows(table, orderCols, filterFn) {
 }
 
 async function loadAll() {
-  const [lines, trash, pers, cats, refs, aliases, khoaAliases] = await Promise.all([
+  const [lines, trash, pers, cats, refs, aliases, khoaAliases, equipment] = await Promise.all([
     fetchAllRows('bhyt_lines', null, (q) => q.is('deleted_at', null)),
     fetchAllRows('bhyt_lines', ['deleted_at'], (q) => q.not('deleted_at', 'is', null)),
     fetchAllRows('bhyt_periods', ['year', 'quarter']),
@@ -209,6 +210,7 @@ async function loadAll() {
     fetchAllRows('bhyt_reference', ['phu_luc', 'stt']),
     fetchAllRows('bhyt_code_aliases', ['alias_code']),
     fetchAllRows('bhyt_khoa_aliases', ['alias_name']),
+    fetchAllRows('bhyt_equipment', ['stt']),
   ]);
   state.lines = lines || [];
   state.trash = trash || [];
@@ -217,6 +219,7 @@ async function loadAll() {
   state.reference = refs || [];
   state.codeAliases = aliases || [];
   state.khoaAliases = khoaAliases || [];
+  state.equipment = equipment || [];
   state.khoaNorm = buildKhoaNormalizer();
   state.bacSiNorm = buildNormalizer(state.lines.map((l) => l.individual));
   state.remediatorNorm = buildNormalizer(state.lines.map((l) => l.remediator));
@@ -528,6 +531,7 @@ function render() {
           ${canEdit ? navItem('setup', 'Kỳ & Danh mục', '🗂️') : ''}
           ${canEdit ? navItem('trash', `Thùng rác${state.trash.length ? ` (${state.trash.length})` : ''}`, '🗑️') : ''}
           ${navItem('reference', 'Thư viện chuyên đề', '🔎')}
+          ${navItem('equipment', 'Trang thiết bị', '🖥️')}
           ${navItem('guide', 'Hướng dẫn', '❔')}
         </nav>
         <div class="px-4 py-3 border-t border-blue-800 text-xs text-blue-300">
@@ -565,7 +569,7 @@ function renderTab() {
   const el = document.getElementById('tab-content');
   state._focusedBeforeRender = document.activeElement && document.activeElement.id;
   let banner = '';
-  if (state.lines.length === 0 && state.periods.length === 0 && !['guide', 'reference', 'setup'].includes(state.tab)) {
+  if (state.lines.length === 0 && state.periods.length === 0 && !['guide', 'reference', 'setup', 'equipment', 'trash'].includes(state.tab)) {
     banner = `<div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-4 text-sm">Chưa có dữ liệu. Import file Excel hoặc thêm dữ liệu ở tab "Kỳ & Danh mục" / "Tra cứu theo kì xuất toán".</div>`;
   }
   let content = '';
@@ -576,10 +580,12 @@ function renderTab() {
   if (state.tab === 'setup') content = setupHTML();
   if (state.tab === 'trash') content = trashHTML();
   if (state.tab === 'reference') content = referenceHTML();
+  if (state.tab === 'equipment') content = equipmentHTML();
   if (state.tab === 'guide') content = guideHTML();
   el.innerHTML = banner + content;
   attachTabEvents();
   if (state.tab === 'overview') drawAllOverviewCharts();
+  if (state.tab === 'equipment') drawEquipmentCharts();
   if (state.tab === 'heatmap') {
     const sr = state._heatmapSearchResult;
     if (sr && sr.mode !== 'none') drawSearchResultChart(sr); else drawHeatmapTopCharts(state._heatmapTop10 || []);
@@ -1684,6 +1690,377 @@ function refItemHTML(r, canEdit) {
 // ---------------------------------------------------------------
 // GUIDE TAB
 // ---------------------------------------------------------------
+// ---------------------------------------------------------------
+// TAB "TRANG THIẾT BỊ"
+// ---------------------------------------------------------------
+const DOSSIER_STATUSES = ['Đủ hoàn toàn', 'Đủ một phần', 'Hoàn toàn thiếu'];
+const DOSSIER_COLOR = {
+  'Đủ hoàn toàn': { badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: '🟢', chart: '#059669' },
+  'Đủ một phần': { badge: 'bg-amber-50 text-amber-700 border-amber-200', dot: '🟡', chart: '#d97706' },
+  'Hoàn toàn thiếu': { badge: 'bg-red-50 text-red-700 border-red-200', dot: '🔴', chart: '#dc2626' },
+};
+function equipKhoaNormalizer() { return state.equipKhoaNorm || buildNormalizer(state.equipment.map((e) => e.khoa_phong)); }
+function equipAnnualRevenue(e) { return (Number(e.doanh_thu_tb_thang) || 0) * 12; } // Doanh thu ước tính/năm — "Tổng doanh thu" gốc trong file bị lỗi #REF!, dùng doanh thu TB/tháng × 12 thay thế
+
+function equipmentFiltered() {
+  const nKhoa = equipKhoaNormalizer();
+  let rows = state.equipment;
+  if (state.equipmentFilterKhoa !== 'ALL') rows = rows.filter((e) => nKhoa(e.khoa_phong) === state.equipmentFilterKhoa);
+  if (state.equipmentFilterStatus !== 'ALL') rows = rows.filter((e) => e.tinh_trang_hoat_dong === state.equipmentFilterStatus);
+  if (state.equipmentFilterDossier !== 'ALL') rows = rows.filter((e) => e.tinh_trang_ho_so === state.equipmentFilterDossier);
+  const q = state.equipmentSearch.trim().toLowerCase();
+  if (q) rows = rows.filter((e) => [e.ten_tb, e.ky_hieu, e.ma_may, e.khoa_phong, e.congty_sx, e.seri].some((f) => (f || '').toLowerCase().includes(q)));
+  return rows;
+}
+
+function equipmentHTML() {
+  const canEdit = state.role === 'editor';
+  const nKhoa = equipKhoaNormalizer();
+  const all = state.equipment;
+  const total = all.length;
+  const byDossierCount = {}; const byDossierRevenue = {};
+  DOSSIER_STATUSES.forEach((s) => { byDossierCount[s] = 0; byDossierRevenue[s] = 0; });
+  all.forEach((e) => {
+    const s = DOSSIER_STATUSES.includes(e.tinh_trang_ho_so) ? e.tinh_trang_ho_so : null;
+    if (s) { byDossierCount[s] += 1; byDossierRevenue[s] += equipAnnualRevenue(e); }
+  });
+  const thieuCount = byDossierCount['Hoàn toàn thiếu'] + byDossierCount['Đủ một phần'];
+  const rueRoRevenue = byDossierRevenue['Hoàn toàn thiếu'] + byDossierRevenue['Đủ một phần'];
+  const pctDuHoanToan = total ? (byDossierCount['Đủ hoàn toàn'] / total) * 100 : 0;
+
+  // Top khoa có nhiều thiết bị thiếu hồ sơ nhất (Đủ một phần + Hoàn toàn thiếu)
+  const khoaThieu = new Map();
+  all.filter((e) => e.tinh_trang_ho_so === 'Hoàn toàn thiếu' || e.tinh_trang_ho_so === 'Đủ một phần').forEach((e) => {
+    const k = nKhoa(e.khoa_phong) || '(chưa xác định)';
+    khoaThieu.set(k, (khoaThieu.get(k) || 0) + 1);
+  });
+  const topKhoaThieu = Array.from(khoaThieu.entries()).map(([key, value]) => ({ key, value })).sort((a, b) => b.value - a.value).slice(0, 10);
+
+  // Tình trạng hoạt động
+  const byOpStatus = new Map();
+  all.forEach((e) => { const s = e.tinh_trang_hoat_dong || '(chưa rõ)'; byOpStatus.set(s, (byOpStatus.get(s) || 0) + 1); });
+  const opStatusList = Array.from(byOpStatus.entries()).map(([key, value]) => ({ key, value })).sort((a, b) => b.value - a.value);
+
+  // Top rủi ro: thiếu hồ sơ + doanh thu ước tính cao nhất
+  const topRisk = all.filter((e) => e.tinh_trang_ho_so === 'Hoàn toàn thiếu' || e.tinh_trang_ho_so === 'Đủ một phần')
+    .map((e) => ({ ...e, _annual: equipAnnualRevenue(e) })).sort((a, b) => b._annual - a._annual).slice(0, 10);
+
+  const khoaOptions = Array.from(new Set(all.map((e) => nKhoa(e.khoa_phong)).filter(Boolean))).sort();
+  const opStatusOptions = Array.from(new Set(all.map((e) => e.tinh_trang_hoat_dong).filter(Boolean))).sort();
+
+  const rows = equipmentFiltered();
+
+  return `
+    <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
+      <p class="text-sm text-slate-500">Tra cứu ${total} trang thiết bị — theo dõi tình trạng hồ sơ pháp lý phục vụ giám định BHYT.</p>
+      <div class="flex gap-2">
+        ${canEdit ? `<input type="file" id="equip-import-file" accept=".xlsx,.xls" class="hidden" /><button id="btn-equip-import" class="border border-slate-300 text-slate-700 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-slate-50">Import Excel</button>` : ''}
+        ${canEdit ? '<button id="btn-equip-add" class="bg-blue-900 text-white rounded-md px-3 py-1.5 text-sm font-medium hover:bg-blue-800">+ Thêm thiết bị</button>' : ''}
+      </div>
+    </div>
+    <div id="equip-import-msg"></div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+      ${statCard('Tổng số thiết bị', total.toLocaleString('vi-VN'), 'blue')}
+      ${statCard('Thiết bị thiếu hồ sơ (thiếu 1 phần + hoàn toàn)', thieuCount.toLocaleString('vi-VN'), thieuCount > 0 ? 'red' : 'emerald')}
+      ${statCard('Doanh thu ước tính/năm — nhóm thiếu hồ sơ', fmtVND(rueRoRevenue) + ' đ', rueRoRevenue > 0 ? 'red' : 'emerald')}
+      ${statCard('Tỉ lệ đã đủ hồ sơ hoàn toàn', pctDuHoanToan.toFixed(1) + '%', 'emerald')}
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tình trạng hồ sơ — theo số lượng thiết bị</h3>
+        <div style="height:280px"><canvas id="equip-dossier-count-chart"></canvas></div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tình trạng hồ sơ — theo doanh thu ước tính/năm</h3>
+        <div style="height:280px"><canvas id="equip-dossier-revenue-chart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Top Khoa/Phòng có nhiều thiết bị thiếu hồ sơ nhất</h3>
+        ${topKhoaThieu.length === 0 ? '<div class="text-sm text-slate-400 py-8 text-center">Không có thiết bị nào thiếu hồ sơ 🎉</div>' : `<div style="height:${Math.max(200, topKhoaThieu.length * 32)}px"><canvas id="equip-top-khoa-chart"></canvas></div>`}
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tình trạng hoạt động</h3>
+        <div style="height:${Math.max(200, opStatusList.length * 32)}px"><canvas id="equip-op-status-chart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3">⚠ Ưu tiên xử lý — thiếu hồ sơ, doanh thu ước tính/năm cao nhất</h3>
+      ${topRisk.length === 0 ? '<div class="text-sm text-slate-400 py-6 text-center">Không có thiết bị nào cần ưu tiên xử lý 🎉</div>' : simpleTable(
+        ['Tên thiết bị', 'Khoa', 'Tình trạng hồ sơ', 'Doanh thu ước tính/năm'],
+        topRisk.map((e) => [escapeHtml(e.ten_tb), escapeHtml(nKhoa(e.khoa_phong)), `${DOSSIER_COLOR[e.tinh_trang_ho_so]?.dot || ''} ${escapeHtml(e.tinh_trang_ho_so || '')}`, fmtVND(e._annual) + ' đ'])
+      )}
+    </div>
+
+    <div class="bg-white border border-slate-200 rounded-lg p-3 mb-4 flex flex-wrap gap-2 items-center">
+      <input id="equip-search" type="text" placeholder="Tìm theo tên, ký hiệu, mã máy, khoa, hãng SX, seri..." value="${escapeHtml(state.equipmentSearch)}" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm flex-1 min-w-[240px]" />
+      <select id="equip-filter-khoa" class="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+        <option value="ALL">Khoa: Tất cả</option>
+        ${khoaOptions.map((k) => `<option value="${escapeHtml(k)}" ${state.equipmentFilterKhoa === k ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('')}
+      </select>
+      <select id="equip-filter-status" class="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+        <option value="ALL">Tình trạng hoạt động: Tất cả</option>
+        ${opStatusOptions.map((k) => `<option value="${escapeHtml(k)}" ${state.equipmentFilterStatus === k ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('')}
+      </select>
+      <select id="equip-filter-dossier" class="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
+        <option value="ALL">Tình trạng hồ sơ: Tất cả</option>
+        ${DOSSIER_STATUSES.map((k) => `<option value="${k}" ${state.equipmentFilterDossier === k ? 'selected' : ''}>${k}</option>`).join('')}
+      </select>
+    </div>
+    <div class="text-xs text-slate-400 mb-2">${rows.length} thiết bị</div>
+    ${state.equipAdding ? equipFormHTML(null) : ''}
+    <div class="space-y-2">
+      ${rows.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Không tìm thấy thiết bị phù hợp</div>' : rows.map((e) => equipItemHTML(e, canEdit)).join('')}
+    </div>
+  `;
+}
+
+function equipItemHTML(e, canEdit) {
+  const expanded = state.equipExpanded.has(String(e.id));
+  if (state.equipEditingId === e.id) return equipFormHTML(e);
+  const dossier = DOSSIER_COLOR[e.tinh_trang_ho_so];
+  const docChecklist = [
+    ['Hiệu chuẩn', e.hieu_chuan], ['Kiểm định', e.kiem_dinh], ['Hợp đồng', e.hop_dong],
+    ['Bàn giao NT', e.ban_giao_nt], ['Hoá đơn', e.hoa_don], ['CO', e.co], ['CQ', e.cq], ['TKHQ', e.tkhq],
+  ];
+  return `
+    <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <button data-equip-toggle="${e.id}" class="w-full text-left px-4 py-3 flex items-start justify-between gap-3 hover:bg-slate-50">
+        <div>
+          ${e.tinh_trang_ho_so ? `<span class="text-[11px] font-medium rounded px-1.5 py-0.5 mr-2 border ${dossier ? dossier.badge : 'bg-slate-50 text-slate-600 border-slate-200'}">${dossier ? dossier.dot : ''} ${escapeHtml(e.tinh_trang_ho_so)}</span>` : ''}
+          <span class="text-sm font-medium text-slate-800">${escapeHtml(e.ten_tb || '(chưa đặt tên)')}</span>
+          <span class="text-xs text-slate-400 ml-2">${escapeHtml(e.khoa_phong || '')}</span>
+        </div>
+        <span class="text-slate-400 text-sm shrink-0">${expanded ? '▲' : '▼'}</span>
+      </button>
+      ${expanded ? `
+        <div class="px-4 pb-4 pt-1 border-t border-slate-100 text-sm">
+          <div class="grid md:grid-cols-3 gap-3 mb-3">
+            <div><div class="text-xs text-slate-400">Ký hiệu / Model</div><div>${escapeHtml(e.ky_hieu || '—')}</div></div>
+            <div><div class="text-xs text-slate-400">Hãng SX / Nước SX</div><div>${escapeHtml(e.congty_sx || '—')} / ${escapeHtml(e.nuoc_sx || '—')}</div></div>
+            <div><div class="text-xs text-slate-400">Năm SX / Năm SD</div><div>${e.nam_sx || '—'} / ${e.nam_sd || '—'}</div></div>
+            <div><div class="text-xs text-slate-400">Mã máy</div><div class="font-mono text-xs">${escapeHtml(e.ma_may || '—')}</div></div>
+            <div><div class="text-xs text-slate-400">Số lưu hành</div><div>${escapeHtml(e.so_luu_hanh || '—')}</div></div>
+            <div><div class="text-xs text-slate-400">Seri</div><div>${escapeHtml(e.seri || '—')}</div></div>
+            <div><div class="text-xs text-slate-400">Tình trạng hoạt động</div><div>${escapeHtml(e.tinh_trang_hoat_dong || '—')}</div></div>
+            <div><div class="text-xs text-slate-400">Doanh thu TB/tháng</div><div>${e.doanh_thu_tb_thang ? fmtVND(e.doanh_thu_tb_thang) + ' đ' : '—'}</div></div>
+            <div><div class="text-xs text-slate-400">Số năm sử dụng</div><div>${e.so_nam_su_dung ?? '—'}</div></div>
+          </div>
+          <div class="mb-3">
+            <div class="text-xs text-slate-400 mb-1">Giấy tờ hồ sơ</div>
+            <div class="flex flex-wrap gap-1.5">
+              ${docChecklist.map(([label, val]) => `<span class="text-[11px] rounded px-1.5 py-0.5 border ${val && val !== 'Không áp dụng' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}">${label}: ${escapeHtml(val || '—')}</span>`).join('')}
+            </div>
+          </div>
+          ${e.de_xuat ? `<div class="mb-3"><div class="text-xs text-slate-400 mb-1">Đề xuất xử lý</div><div class="text-slate-700 whitespace-pre-line">${nl2br(e.de_xuat)}</div></div>` : ''}
+          ${canEdit ? `<div class="flex gap-3 pt-1"><button data-equip-edit="${e.id}" class="text-xs text-blue-700 hover:underline">Sửa</button><button data-equip-delete="${e.id}" class="text-xs text-red-600 hover:underline">Xoá</button></div>` : ''}
+        </div>` : ''}
+    </div>`;
+}
+
+function equipFormHTML(e) {
+  const v = e || { ten_tb: '', ky_hieu: '', khoa_phong: '', tinh_trang_hoat_dong: '', tinh_trang_ho_so: '', doanh_thu_tb_thang: '', de_xuat: '' };
+  const idAttr = e ? `data-equip-form-id="${e.id}"` : `data-equip-form-id="new"`;
+  return `
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-3" ${idAttr}>
+      <div class="grid md:grid-cols-2 gap-3 mb-3">
+        <div><label class="text-xs text-slate-600">Tên thiết bị *</label><input data-ef="ten_tb" type="text" value="${escapeHtml(v.ten_tb)}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Ký hiệu / Model</label><input data-ef="ky_hieu" type="text" value="${escapeHtml(v.ky_hieu)}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Khoa/Phòng đang sử dụng</label><input data-ef="khoa_phong" type="text" value="${escapeHtml(v.khoa_phong)}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Tình trạng hoạt động</label><input data-ef="tinh_trang_hoat_dong" type="text" value="${escapeHtml(v.tinh_trang_hoat_dong)}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Tình trạng hồ sơ</label><select data-ef="tinh_trang_ho_so" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm bg-white"><option value="">— Chưa xác định —</option>${DOSSIER_STATUSES.map((s) => `<option value="${s}" ${v.tinh_trang_ho_so === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+        <div><label class="text-xs text-slate-600">Doanh thu trung bình/tháng (đ)</label><input data-ef="doanh_thu_tb_thang" type="text" inputmode="numeric" value="${v.doanh_thu_tb_thang ? fmtVND(v.doanh_thu_tb_thang) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+      </div>
+      <div class="mb-3"><label class="text-xs text-slate-600">Đề xuất xử lý</label><textarea data-ef="de_xuat" rows="2" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm">${escapeHtml(v.de_xuat || '')}</textarea></div>
+      <div class="flex gap-2">
+        <button data-equip-save="${e ? e.id : 'new'}" class="bg-blue-900 text-white rounded-md px-3 py-1.5 text-sm font-medium hover:bg-blue-800">Lưu</button>
+        <button data-equip-cancel="${e ? e.id : 'new'}" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm">Huỷ</button>
+      </div>
+    </div>`;
+}
+
+function drawEquipmentCharts() {
+  const all = state.equipment;
+  const byCount = {}; const byRevenue = {};
+  DOSSIER_STATUSES.forEach((s) => { byCount[s] = 0; byRevenue[s] = 0; });
+  all.forEach((e) => {
+    const s = DOSSIER_STATUSES.includes(e.tinh_trang_ho_so) ? e.tinh_trang_ho_so : null;
+    if (s) { byCount[s] += 1; byRevenue[s] += equipAnnualRevenue(e); }
+  });
+  const labels = DOSSIER_STATUSES.filter((s) => byCount[s] > 0);
+  const colors = labels.map((s) => DOSSIER_COLOR[s].chart);
+
+  const ctx1 = document.getElementById('equip-dossier-count-chart');
+  if (state.equipDossierCountChartRef) { state.equipDossierCountChartRef.destroy(); state.equipDossierCountChartRef = null; }
+  if (ctx1 && labels.length) {
+    state.equipDossierCountChartRef = new Chart(ctx1, {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data: labels.map((s) => byCount[s]), backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
+      plugins: [outsideLabelPlugin()],
+      options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 24, bottom: 24, left: 70, right: 70 } },
+        plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 14 } }, datalabels: { display: false } },
+        onHover: onHoverPointer,
+        onClick: (evt, elements) => { if (elements.length) { state.equipmentFilterDossier = labels[elements[0].index]; renderTab(); } },
+      },
+    });
+  }
+  const ctx2 = document.getElementById('equip-dossier-revenue-chart');
+  if (state.equipDossierRevenueChartRef) { state.equipDossierRevenueChartRef.destroy(); state.equipDossierRevenueChartRef = null; }
+  const revLabels = DOSSIER_STATUSES.filter((s) => byRevenue[s] > 0);
+  if (ctx2 && revLabels.length) {
+    state.equipDossierRevenueChartRef = new Chart(ctx2, {
+      type: 'doughnut',
+      data: { labels: revLabels, datasets: [{ data: revLabels.map((s) => byRevenue[s]), backgroundColor: revLabels.map((s) => DOSSIER_COLOR[s].chart), borderWidth: 2, borderColor: '#fff' }] },
+      plugins: [outsideLabelPlugin()],
+      options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 24, bottom: 24, left: 70, right: 70 } },
+        plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 14 } }, datalabels: { display: false } },
+        onHover: onHoverPointer,
+        onClick: (evt, elements) => { if (elements.length) { state.equipmentFilterDossier = revLabels[elements[0].index]; renderTab(); } },
+      },
+    });
+  }
+
+  const nKhoa = equipKhoaNormalizer();
+  const khoaThieu = new Map();
+  all.filter((e) => e.tinh_trang_ho_so === 'Hoàn toàn thiếu' || e.tinh_trang_ho_so === 'Đủ một phần').forEach((e) => {
+    const k = nKhoa(e.khoa_phong) || '(chưa xác định)';
+    khoaThieu.set(k, (khoaThieu.get(k) || 0) + 1);
+  });
+  const topKhoaThieu = Array.from(khoaThieu.entries()).map(([key, value]) => ({ key, value })).sort((a, b) => b.value - a.value).slice(0, 10);
+  const ctx3 = document.getElementById('equip-top-khoa-chart');
+  if (state.equipTopKhoaChartRef) { state.equipTopKhoaChartRef.destroy(); state.equipTopKhoaChartRef = null; }
+  if (ctx3 && topKhoaThieu.length) {
+    state.equipTopKhoaChartRef = new Chart(ctx3, {
+      type: 'bar',
+      data: { labels: topKhoaThieu.map((g) => g.key), datasets: [{ label: 'Số thiết bị thiếu hồ sơ', data: topKhoaThieu.map((g) => g.value), backgroundColor: '#dc2626',
+        datalabels: { anchor: 'end', align: 'end', color: '#dc2626', font: { weight: 'bold', size: 10 } } }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 24 } },
+        scales: { x: { title: { display: true, text: 'số thiết bị' } } }, plugins: { legend: { display: false } },
+        onHover: onHoverPointer,
+        onClick: (evt, elements) => { if (elements.length) { state.equipmentFilterKhoa = topKhoaThieu[elements[0].index].key; renderTab(); } },
+      },
+    });
+  }
+
+  const byOpStatus = new Map();
+  all.forEach((e) => { const s = e.tinh_trang_hoat_dong || '(chưa rõ)'; byOpStatus.set(s, (byOpStatus.get(s) || 0) + 1); });
+  const opStatusList = Array.from(byOpStatus.entries()).map(([key, value]) => ({ key, value })).sort((a, b) => b.value - a.value);
+  const ctx4 = document.getElementById('equip-op-status-chart');
+  if (state.equipOpStatusChartRef) { state.equipOpStatusChartRef.destroy(); state.equipOpStatusChartRef = null; }
+  if (ctx4 && opStatusList.length) {
+    state.equipOpStatusChartRef = new Chart(ctx4, {
+      type: 'bar',
+      data: { labels: opStatusList.map((g) => g.key), datasets: [{ label: 'Số thiết bị', data: opStatusList.map((g) => g.value), backgroundColor: '#1e3a8a',
+        datalabels: { anchor: 'end', align: 'end', color: '#1e3a8a', font: { weight: 'bold', size: 10 } } }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 24 } },
+        scales: { x: { title: { display: true, text: 'số thiết bị' } } }, plugins: { legend: { display: false } },
+        onHover: onHoverPointer,
+        onClick: (evt, elements) => { if (elements.length) { state.equipmentFilterStatus = opStatusList[elements[0].index].key; renderTab(); } },
+      },
+    });
+  }
+}
+
+function readEquipForm() {
+  const box = document.querySelector('[data-equip-form-id]');
+  const get = (f) => box.querySelector(`[data-ef="${f}"]`)?.value?.trim() || '';
+  return {
+    ten_tb: get('ten_tb'), ky_hieu: get('ky_hieu'), khoa_phong: get('khoa_phong'),
+    tinh_trang_hoat_dong: get('tinh_trang_hoat_dong'), tinh_trang_ho_so: get('tinh_trang_ho_so'),
+    doanh_thu_tb_thang: parseMoney(get('doanh_thu_tb_thang')), de_xuat: get('de_xuat'),
+  };
+}
+async function saveEquipForm(idOrNew) {
+  const payload = readEquipForm();
+  if (!payload.ten_tb) { alert('Vui lòng nhập tên thiết bị.'); return; }
+  if (idOrNew === 'new') {
+    const { data, error } = await sb.from('bhyt_equipment').insert(payload).select().single();
+    if (error) { alert('Lỗi khi thêm: ' + error.message); return; }
+    state.equipment.push(data);
+    state.equipAdding = false;
+  } else {
+    const id = Number(idOrNew);
+    const { error } = await sb.from('bhyt_equipment').update(payload).eq('id', id);
+    if (error) { alert('Lỗi khi lưu: ' + error.message); return; }
+    const row = state.equipment.find((e) => e.id === id);
+    if (row) Object.assign(row, payload);
+    state.equipEditingId = null;
+  }
+  state.equipKhoaNorm = buildNormalizer(state.equipment.map((e) => e.khoa_phong));
+  renderTab();
+}
+async function deleteEquipment(id) {
+  if (!confirm('Xoá thiết bị này? Không thể hoàn tác.')) return;
+  const { error } = await sb.from('bhyt_equipment').delete().eq('id', id);
+  if (error) { alert('Lỗi khi xoá: ' + error.message); return; }
+  state.equipment = state.equipment.filter((e) => e.id !== id);
+  renderTab();
+}
+async function handleEquipmentImport(ev) {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  const msgEl = document.getElementById('equip-import-msg');
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const sheetName = wb.SheetNames.includes('189') ? '189' : wb.SheetNames[0];
+    const raw = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+    const toIntOrNull = (v) => { const n = parseInt(v, 10); return isNaN(n) ? null : n; };
+    const toNumOrNull = (v) => { const n = Number(v); return (v === '' || isNaN(n)) ? null : n; };
+    const rows = raw.map((r) => ({
+      stt: toIntOrNull(r['STT']),
+      ten_tb: String(r['TEN_TB'] || '').trim(),
+      ky_hieu: String(r['KY_HIEU'] || '').trim(),
+      congty_sx: String(r['CONGTY_SX'] || '').trim(),
+      nuoc_sx: String(r['NUOC_SX'] || '').trim(),
+      nam_sx: toIntOrNull(r['NAM_SX']),
+      nam_sd: toIntOrNull(r['NAM_SD']),
+      ma_may: String(r['MA_MAY'] || '').trim(),
+      so_luu_hanh: String(r['SO_LUU_HANH'] || '').trim(),
+      hd_tu: String(r['HD_TU'] || '').trim(),
+      hd_den: String(r['HD_DEN'] || '').trim(),
+      hieu_luc_tu: String(r['TU_NGAY'] || '').trim(),
+      hieu_luc_den: String(r['DEN_NGAY'] || '').trim(),
+      id_bhxh: String(r['ID'] || '').trim(),
+      cong_bhxh: String(r['Cổng BHXH'] || '').trim(),
+      tinh_trang_hoat_dong: String(r['Tình trạng hoạt động'] || '').trim(),
+      khoa_phong: String(r['Khoa Phòng đang sử dụng'] || '').trim(),
+      seri: String(r['Seri'] || '').trim(),
+      hieu_chuan: String(r['Hiệu chuẩn'] || '').trim(),
+      kiem_dinh: String(r['Kiểm định'] || '').trim(),
+      hop_dong: String(r['Hợp đồng'] || '').trim(),
+      ban_giao_nt: String(r['Bàn giao NT'] || '').trim(),
+      hoa_don: String(r['Hoá đơn'] || '').trim(),
+      co: String(r['CO'] || '').trim(),
+      cq: String(r['CQ'] || '').trim(),
+      tkhq: String(r['TKHQ'] || '').trim(),
+      phan_loai_tb: String(r['Phân loại TB'] || '').trim(),
+      tinh_trang_ho_so: String(r['Tình trạng hồ sơ'] || '').trim(),
+      doanh_thu_tb_thang: toNumOrNull(r['Doanh thu trung bình/tháng']),
+      so_nam_su_dung: toNumOrNull(r['Số năm sử dụng']),
+      tong_doanh_thu: toNumOrNull(r['Tổng doanh thu']),
+      de_xuat: String(r['Đề xuất'] || '').trim(),
+    })).filter((r) => r.ten_tb);
+
+    if (rows.length === 0) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không đọc được dòng nào hợp lệ từ sheet "${escapeHtml(sheetName)}".</div>`; return; }
+    const { error } = await sb.from('bhyt_equipment').insert(rows);
+    if (error) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Lỗi khi ghi: ${escapeHtml(error.message)}</div>`; return; }
+    await loadAll();
+    msgEl.innerHTML = `<div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-3 py-2 text-sm mb-3">Đã thêm ${rows.length} thiết bị.</div>`;
+    renderTab();
+  } catch (err) {
+    msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không đọc được file: ${escapeHtml(err.message || String(err))}</div>`;
+  } finally {
+    ev.target.value = '';
+    setTimeout(() => { msgEl.innerHTML = ''; }, 8000);
+  }
+}
+
 function guideSection(title, items) {
   return `<div class="bg-white border border-slate-200 rounded-lg p-4"><h3 class="text-sm font-semibold text-blue-900 mb-2">${title}</h3><div class="space-y-1.5 text-sm text-slate-700">${items.map((i) => `<p>${i}</p>`).join('')}</div></div>`;
 }
@@ -1834,6 +2211,31 @@ function attachTabEvents() {
     document.querySelectorAll('[data-ref-delete]').forEach((btn) => { btn.onclick = () => deleteReferenceItem(Number(btn.dataset.refDelete)); });
     document.querySelectorAll('[data-ref-cancel]').forEach((btn) => { btn.onclick = () => { state.refAdding = false; state.refEditingId = null; renderTab(); }; });
     document.querySelectorAll('[data-ref-save]').forEach((btn) => { btn.onclick = () => saveReferenceForm(btn.dataset.refSave); });
+  }
+  if (state.tab === 'equipment') {
+    const searchEl = document.getElementById('equip-search');
+    if (searchEl) {
+      searchEl.addEventListener('input', (e) => { state.equipmentSearch = e.target.value; renderTab(); });
+      const val = searchEl.value;
+      if (state._focusedBeforeRender === 'equip-search') { searchEl.focus(); searchEl.value = ''; searchEl.value = val; }
+    }
+    const khoaEl = document.getElementById('equip-filter-khoa');
+    if (khoaEl) khoaEl.onchange = (e) => { state.equipmentFilterKhoa = e.target.value; renderTab(); };
+    const statusEl = document.getElementById('equip-filter-status');
+    if (statusEl) statusEl.onchange = (e) => { state.equipmentFilterStatus = e.target.value; renderTab(); };
+    const dossierEl = document.getElementById('equip-filter-dossier');
+    if (dossierEl) dossierEl.onchange = (e) => { state.equipmentFilterDossier = e.target.value; renderTab(); };
+    const addBtn = document.getElementById('btn-equip-add');
+    if (addBtn) addBtn.onclick = () => { state.equipAdding = true; state.equipEditingId = null; renderTab(); };
+    const importBtn = document.getElementById('btn-equip-import');
+    if (importBtn) importBtn.onclick = () => document.getElementById('equip-import-file').click();
+    const importFile = document.getElementById('equip-import-file');
+    if (importFile) importFile.addEventListener('change', handleEquipmentImport);
+    document.querySelectorAll('[data-equip-toggle]').forEach((btn) => { btn.onclick = () => { const id = btn.dataset.equipToggle; if (state.equipExpanded.has(id)) state.equipExpanded.delete(id); else state.equipExpanded.add(id); renderTab(); }; });
+    document.querySelectorAll('[data-equip-edit]').forEach((btn) => { btn.onclick = () => { state.equipEditingId = Number(btn.dataset.equipEdit); state.equipAdding = false; renderTab(); }; });
+    document.querySelectorAll('[data-equip-delete]').forEach((btn) => { btn.onclick = () => deleteEquipment(Number(btn.dataset.equipDelete)); });
+    document.querySelectorAll('[data-equip-cancel]').forEach((btn) => { btn.onclick = () => { state.equipAdding = false; state.equipEditingId = null; renderTab(); }; });
+    document.querySelectorAll('[data-equip-save]').forEach((btn) => { btn.onclick = () => saveEquipForm(btn.dataset.equipSave); });
   }
 }
 
