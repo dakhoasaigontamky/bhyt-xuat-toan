@@ -532,7 +532,7 @@ function render() {
           ${canEdit ? navItem('setup', 'Kỳ & Danh mục', '🗂️') : ''}
           ${canEdit ? navItem('trash', `Thùng rác${state.trash.length ? ` (${state.trash.length})` : ''}`, '🗑️') : ''}
           ${navItem('reference', 'Thư viện chuyên đề', '🔎')}
-          ${navItem('equipment', 'Trang thiết bị', '🖥️')}
+          ${navItem('equipment', 'Trang thiết bị KCB BHYT', '🖥️')}
           ${navItem('guide', 'Hướng dẫn', '❔')}
         </nav>
         <div class="px-4 py-3 border-t border-blue-800 text-xs text-blue-300">
@@ -1757,7 +1757,7 @@ function equipmentHTML() {
 
   return `
     <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
-      <p class="text-sm text-slate-500">Tra cứu ${total} trang thiết bị — theo dõi tình trạng hồ sơ pháp lý phục vụ giám định BHYT.</p>
+      <p class="text-sm text-slate-500">Tra cứu Trang thiết bị KCB BHYT — theo dõi tình trạng hồ sơ pháp lý phục vụ giám định BHYT (${total} thiết bị).</p>
       <div class="flex gap-2">
         ${canEdit ? `<input type="file" id="equip-import-file" accept=".xlsx,.xls" class="hidden" /><button id="btn-equip-import" class="border border-slate-300 text-slate-700 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-slate-50">Import Excel</button>` : ''}
         ${canEdit ? '<button id="btn-equip-add" class="bg-blue-900 text-white rounded-md px-3 py-1.5 text-sm font-medium hover:bg-blue-800">+ Thêm thiết bị</button>' : ''}
