@@ -221,6 +221,7 @@ async function loadAll() {
   state.khoaAliases = khoaAliases || [];
   state.equipment = equipment || [];
   state.khoaNorm = buildKhoaNormalizer();
+  state.equipKhoaNorm = buildEquipKhoaNormalizer();
   state.bacSiNorm = buildNormalizer(state.lines.map((l) => l.individual));
   state.remediatorNorm = buildNormalizer(state.lines.map((l) => l.remediator));
 }
@@ -1699,7 +1700,11 @@ const DOSSIER_COLOR = {
   'Đủ một phần': { badge: 'bg-amber-50 text-amber-700 border-amber-200', dot: '🟡', chart: '#d97706' },
   'Hoàn toàn thiếu': { badge: 'bg-red-50 text-red-700 border-red-200', dot: '🔴', chart: '#dc2626' },
 };
-function equipKhoaNormalizer() { return state.equipKhoaNorm || buildNormalizer(state.equipment.map((e) => e.khoa_phong)); }
+function buildEquipKhoaNormalizer() {
+  const caseNorm = buildNormalizer(state.equipment.map((e) => e.khoa_phong));
+  return (raw) => resolveKhoaAlias(caseNorm(raw));
+}
+function equipKhoaNormalizer() { return state.equipKhoaNorm || buildEquipKhoaNormalizer(); }
 function equipAnnualRevenue(e) { return (Number(e.doanh_thu_tb_thang) || 0) * 12; } // Doanh thu ước tính/năm — "Tổng doanh thu" gốc trong file bị lỗi #REF!, dùng doanh thu TB/tháng × 12 thay thế
 
 function equipmentFiltered() {
@@ -1991,7 +1996,7 @@ async function saveEquipForm(idOrNew) {
     if (row) Object.assign(row, payload);
     state.equipEditingId = null;
   }
-  state.equipKhoaNorm = buildNormalizer(state.equipment.map((e) => e.khoa_phong));
+  state.equipKhoaNorm = buildEquipKhoaNormalizer();
   renderTab();
 }
 async function deleteEquipment(id) {
@@ -2484,17 +2489,20 @@ async function saveKhoaAliasField(idx, field, value) {
     if (err2) { alert('Lỗi: ' + err2.message); return; }
     state.khoaAliases[idx] = data;
     state.khoaNorm = buildKhoaNormalizer();
+  state.equipKhoaNorm = buildEquipKhoaNormalizer();
     renderTab();
     return;
   }
   await sb.from('bhyt_khoa_aliases').update({ [field]: value }).eq('alias_name', a.alias_name);
   a[field] = value;
   state.khoaNorm = buildKhoaNormalizer();
+  state.equipKhoaNorm = buildEquipKhoaNormalizer();
 }
 async function deleteKhoaAlias(aliasName) {
   await sb.from('bhyt_khoa_aliases').delete().eq('alias_name', aliasName);
   state.khoaAliases = state.khoaAliases.filter((a) => a.alias_name !== aliasName);
   state.khoaNorm = buildKhoaNormalizer();
+  state.equipKhoaNorm = buildEquipKhoaNormalizer();
   renderTab();
 }
 async function addKhoaAliasRow() {
@@ -2506,16 +2514,20 @@ async function addKhoaAliasRow() {
   if (error) { alert('Lỗi khi thêm: ' + error.message); return; }
   state.khoaAliases.push(data);
   state.khoaNorm = buildKhoaNormalizer();
+  state.equipKhoaNorm = buildEquipKhoaNormalizer();
   renderTab();
 }
 async function applyKhoaAliasesToExisting() {
   if (state.khoaAliases.length === 0) { alert('Chưa có ánh xạ nào để áp dụng.'); return; }
-  if (!confirm(`Áp dụng ${state.khoaAliases.length} ánh xạ cho toàn bộ dữ liệu đã có? Các dòng có tên khoa trùng "Tên trong dữ liệu" sẽ được đổi thành "Tên chuẩn" tương ứng. Không thể hoàn tác.`)) return;
+  if (!confirm(`Áp dụng ${state.khoaAliases.length} ánh xạ cho toàn bộ dữ liệu đã có (cả Chi tiết xuất toán lẫn Trang thiết bị)? Các dòng có tên khoa trùng "Tên trong dữ liệu" sẽ được đổi thành "Tên chuẩn" tương ứng. Không thể hoàn tác.`)) return;
   let totalUpdated = 0;
   for (const a of state.khoaAliases) {
-    const { error, count } = await sb.from('bhyt_lines').update({ department: a.canonical_name }, { count: 'exact' }).eq('department', a.alias_name);
-    if (error) { alert(`Lỗi khi áp dụng ánh xạ ${a.alias_name} → ${a.canonical_name}: ` + error.message); continue; }
-    totalUpdated += count || 0;
+    const res1 = await sb.from('bhyt_lines').update({ department: a.canonical_name }, { count: 'exact' }).eq('department', a.alias_name);
+    if (res1.error) { alert(`Lỗi khi áp dụng ánh xạ ${a.alias_name} → ${a.canonical_name} (Chi tiết xuất toán): ` + res1.error.message); continue; }
+    totalUpdated += res1.count || 0;
+    const res2 = await sb.from('bhyt_equipment').update({ khoa_phong: a.canonical_name }, { count: 'exact' }).eq('khoa_phong', a.alias_name);
+    if (res2.error) { alert(`Lỗi khi áp dụng ánh xạ ${a.alias_name} → ${a.canonical_name} (Trang thiết bị): ` + res2.error.message); continue; }
+    totalUpdated += res2.count || 0;
   }
   await loadAll();
   alert(`Đã cập nhật ${totalUpdated} dòng theo ánh xạ.`);
