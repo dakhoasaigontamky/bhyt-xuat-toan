@@ -1107,7 +1107,13 @@ function detailsHTML() {
   const pageStart = (state.detailsPage - 1) * DETAILS_PAGE_SIZE;
   const pageRows = rows.slice(pageStart, pageStart + DETAILS_PAGE_SIZE);
 
+  const totalCost = rows.reduce((s, r) => s + (r.cost || 0), 0);
+
   return `
+    <div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-3 flex items-center justify-between flex-wrap gap-2">
+      <span class="text-sm font-medium text-red-700">Tổng giá trị xuất toán (theo bộ lọc/tìm kiếm đang áp dụng)</span>
+      <span class="text-xl font-bold text-red-700">${fmtVND(totalCost)} đ</span>
+    </div>
     <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
       <div class="flex items-center gap-2 flex-wrap">
         <label class="text-sm text-slate-600">Xem theo kì:</label>
