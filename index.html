@@ -99,7 +99,7 @@ let state = {
   heatmapMode: 'department', heatmapAxis: 'quarter', heatmapMetric: 'cost', heatmapCause: 'ALL', heatmapSearch: '',
   riskQuarterKey: null,
   refSearch: '', refGroup: 'ALL', refSource: 'ALL', refExpanded: new Set(), refAdding: false, refEditingId: null,
-  showPwBox: false, pwMsg: null, sidebarOpen: false,
+  showPwBox: false, pwMsg: null, sidebarOpen: false, showMobileActions: false,
   rateChartRef: null, costRevenueChartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
   topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null, groupCostChartRef: null, khoaCostChartRef: null, searchResultChartRef: null, categoryTrendChartRef: null, overviewCatSearch: '',
   equipDossierCountChartRef: null, equipDossierRevenueChartRef: null, equipTopKhoaChartRef: null, equipOpStatusChartRef: null,
@@ -498,7 +498,7 @@ function render() {
   const canEdit = state.role === 'editor';
   app.innerHTML = `
     <div class="min-h-screen">
-      <div class="bg-blue-900 text-white flex items-center justify-between gap-3 px-4 py-3 sticky top-0 z-40 flex-wrap">
+      <div id="app-header" class="bg-blue-900 text-white flex items-center justify-between gap-3 px-4 py-3 sticky top-0 z-40 flex-wrap">
         <button id="btn-toggle-sidebar" class="flex items-center gap-2.5 text-left hover:bg-blue-800/60 rounded-md px-2 py-1 -ml-2">
           <span class="text-lg leading-none">☰</span>
           <div>
@@ -506,7 +506,8 @@ function render() {
             <div class="text-sm text-blue-300 leading-tight">Dashboard quản lý xuất toán BHYT BV ĐK Sài Gòn Tam Kỳ</div>
           </div>
         </button>
-        <div class="flex items-center gap-2 flex-wrap">
+        <button id="btn-toggle-actions" class="lg:hidden text-white text-xl px-2 py-1 rounded-md hover:bg-blue-800/60">⋮</button>
+        <div id="header-actions" class="${state.showMobileActions ? 'flex' : 'hidden'} lg:flex items-center gap-2 flex-wrap w-full lg:w-auto">
           ${canEdit ? `<input type="file" id="import-file" accept=".xlsx,.xls" class="hidden" />
           <button id="btn-import" class="bg-white text-blue-900 hover:bg-blue-50 rounded-md px-3 py-2 text-sm font-medium">Import Excel</button>` : ''}
           ${canEdit ? `<button id="btn-settings" title="Kỳ &amp; Danh mục" class="border border-blue-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-blue-800 ${state.tab === 'setup' ? 'bg-blue-800' : ''}">⚙️</button>` : ''}
@@ -527,8 +528,8 @@ function render() {
         </div>
       </div>
 
-      ${state.sidebarOpen ? '<div id="sidebar-backdrop" class="fixed inset-0 top-14 bg-black/30 z-20"></div>' : ''}
-      <aside class="fixed top-14 left-0 bottom-0 w-60 bg-blue-900 text-white flex flex-col z-30 transform transition-transform duration-200 ${state.sidebarOpen ? 'translate-x-0' : '-translate-x-full'}">
+      ${state.sidebarOpen ? '<div id="sidebar-backdrop" class="fixed inset-0 bg-black/30 z-20"></div>' : ''}
+      <aside id="app-sidebar" class="fixed left-0 bottom-0 w-60 bg-blue-900 text-white flex flex-col z-30 transform transition-transform duration-200 ${state.sidebarOpen ? 'translate-x-0' : '-translate-x-full'}">
         <nav class="flex-1 py-3 overflow-y-auto">
           ${navItem('overview', 'Tổng quan', '📊')}
           ${navItem('details', 'Tra cứu theo kỳ xuất toán', '📋')}
@@ -558,10 +559,19 @@ function render() {
   if (pwSubmitBtn) pwSubmitBtn.onclick = handleChangePassword;
   if (canEdit) document.getElementById('btn-import').onclick = () => document.getElementById('import-file').click();
   if (canEdit) document.getElementById('import-file').addEventListener('change', handleImport);
-  document.getElementById('btn-toggle-sidebar').onclick = () => { state.sidebarOpen = !state.sidebarOpen; render(); };
+  document.getElementById('btn-toggle-sidebar').onclick = () => { state.sidebarOpen = !state.sidebarOpen; state.showMobileActions = false; render(); };
+  const toggleActionsBtn = document.getElementById('btn-toggle-actions');
+  if (toggleActionsBtn) toggleActionsBtn.onclick = () => { state.showMobileActions = !state.showMobileActions; state.sidebarOpen = false; render(); };
   const backdrop = document.getElementById('sidebar-backdrop');
   if (backdrop) backdrop.onclick = () => { state.sidebarOpen = false; render(); };
   document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { state.tab = b.dataset.tab; state.sidebarOpen = false; render(); });
+  const headerEl = document.getElementById('app-header');
+  if (headerEl) {
+    const h = headerEl.offsetHeight + 'px';
+    const asideEl = document.getElementById('app-sidebar');
+    if (asideEl) asideEl.style.top = h;
+    if (backdrop) backdrop.style.top = h;
+  }
   renderTab();
 }
 
