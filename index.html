@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Theo dõi xuất toán BHYT</title>
+<title>SHI MANAGEMENT - MSG DKTK</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -502,13 +502,14 @@ function render() {
         <button id="btn-toggle-sidebar" class="flex items-center gap-2.5 text-left hover:bg-blue-800/60 rounded-md px-2 py-1 -ml-2">
           <span class="text-lg leading-none">☰</span>
           <div>
-            <div class="text-xl font-bold leading-tight tracking-wide">SHI MANAGEMENT</div>
-            <div class="text-sm text-blue-300 leading-tight">Dashboard quản lý xuất toán BHYT</div>
+            <div class="text-xl font-bold leading-tight tracking-wide">SHI MANAGEMENT - MSG DKTK</div>
+            <div class="text-sm text-blue-300 leading-tight">Dashboard quản lý xuất toán BHYT BV ĐK Sài Gòn Tam Kỳ</div>
           </div>
         </button>
         <div class="flex items-center gap-2 flex-wrap">
           ${canEdit ? `<input type="file" id="import-file" accept=".xlsx,.xls" class="hidden" />
           <button id="btn-import" class="bg-white text-blue-900 hover:bg-blue-50 rounded-md px-3 py-2 text-sm font-medium">Import Excel</button>` : ''}
+          ${canEdit ? `<button id="btn-settings" title="Kỳ &amp; Danh mục" class="border border-blue-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-blue-800 ${state.tab === 'setup' ? 'bg-blue-800' : ''}">⚙️</button>` : ''}
           <button id="btn-export" class="border border-blue-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-blue-800">Export Excel</button>
           <div class="relative">
             <button id="btn-change-pw" class="border border-blue-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-blue-800">Đổi mật khẩu</button>
@@ -530,13 +531,12 @@ function render() {
       <aside class="fixed top-14 left-0 bottom-0 w-60 bg-blue-900 text-white flex flex-col z-30 transform transition-transform duration-200 ${state.sidebarOpen ? 'translate-x-0' : '-translate-x-full'}">
         <nav class="flex-1 py-3 overflow-y-auto">
           ${navItem('overview', 'Tổng quan', '📊')}
-          ${navItem('details', 'Tra cứu theo kì xuất toán', '📋')}
-          ${navItem('heatmap', 'Tra cứu theo khoa và cá nhân', '🗺️')}
+          ${navItem('details', 'Tra cứu theo kỳ xuất toán', '📋')}
+          ${navItem('heatmap', 'Tra cứu theo khoa/cá nhân', '🗺️')}
+          ${navItem('equipment', 'Tra cứu trang thiết bị BHYT', '🖥️')}
           ${navItem('risk', 'Risk Score', '🚦')}
-          ${canEdit ? navItem('setup', 'Kỳ & Danh mục', '🗂️') : ''}
+          ${navItem('reference', 'Thư viện tra cứu tham khảo', '🔎')}
           ${canEdit ? navItem('trash', `Thùng rác${state.trash.length ? ` (${state.trash.length})` : ''}`, '🗑️') : ''}
-          ${navItem('reference', 'Thư viện tra cứu', '🔎')}
-          ${navItem('equipment', 'Trang thiết bị KCB BHYT', '🖥️')}
           ${navItem('guide', 'Hướng dẫn', '❔')}
         </nav>
         <div class="px-4 py-3 border-t border-blue-800 text-xs text-blue-300">
@@ -551,6 +551,8 @@ function render() {
   `;
   document.getElementById('btn-logout').onclick = async () => { await logout(); };
   document.getElementById('btn-export').onclick = handleExport;
+  const settingsBtn = document.getElementById('btn-settings');
+  if (settingsBtn) settingsBtn.onclick = () => { state.tab = 'setup'; render(); };
   document.getElementById('btn-change-pw').onclick = () => { state.showPwBox = !state.showPwBox; state.pwMsg = null; render(); };
   const pwSubmitBtn = document.getElementById('btn-pw-submit');
   if (pwSubmitBtn) pwSubmitBtn.onclick = handleChangePassword;
@@ -575,7 +577,7 @@ function renderTab() {
   state._focusedBeforeRender = document.activeElement && document.activeElement.id;
   let banner = '';
   if (state.lines.length === 0 && state.periods.length === 0 && !['guide', 'reference', 'setup', 'equipment', 'trash'].includes(state.tab)) {
-    banner = `<div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-4 text-sm">Chưa có dữ liệu. Import file Excel hoặc thêm dữ liệu ở tab "Kỳ & Danh mục" / "Tra cứu theo kì xuất toán".</div>`;
+    banner = `<div class="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-4 text-sm">Chưa có dữ liệu. Import file Excel hoặc thêm dữ liệu ở tab "Kỳ & Danh mục" / "Tra cứu theo kỳ xuất toán".</div>`;
   }
   let content = '';
   if (state.tab === 'overview') content = overviewHTML();
@@ -1832,7 +1834,7 @@ function equipmentHTML() {
 
   return `
     <div class="flex items-center justify-between flex-wrap gap-2 mb-4">
-      <p class="text-sm text-slate-500">Tra cứu Trang thiết bị KCB BHYT — theo dõi tình trạng hồ sơ pháp lý phục vụ giám định BHYT (${total} thiết bị).</p>
+      <p class="text-sm text-slate-500">Tra cứu trang thiết bị BHYT — theo dõi tình trạng hồ sơ pháp lý phục vụ giám định BHYT (${total} thiết bị).</p>
       <div class="flex gap-2">
         ${canEdit ? `<input type="file" id="equip-import-file" accept=".xlsx,.xls" class="hidden" /><button id="btn-equip-import" class="border border-slate-300 text-slate-700 rounded-md px-3 py-1.5 text-sm font-medium hover:bg-slate-50">Import Excel</button>` : ''}
         ${canEdit ? '<button id="btn-equip-add" class="bg-blue-900 text-white rounded-md px-3 py-1.5 text-sm font-medium hover:bg-blue-800">+ Thêm thiết bị</button>' : ''}
@@ -2238,11 +2240,12 @@ function guideHTML() {
       ])}
       ${guideSection('2. Các tab', [
         '<b>Tổng quan</b>: cảnh báo chuyên đề mới/lặp lại, thẻ số liệu, xu hướng theo kì, Pareto chi phí — có bộ lọc Năm/Kỳ/Khoa/Người/Nhóm lỗi.',
-        '<b>Tra cứu theo kì xuất toán</b>: bảng nhập liệu chính, import/export Excel.',
-        '<b>Tra cứu theo khoa và cá nhân</b>: heatmap khoa/cá nhân theo Quý hoặc theo Chuyên đề, xem theo chi phí hoặc số lượt.',
+        '<b>Tra cứu theo kỳ xuất toán</b>: bảng nhập liệu chính, import/export Excel.',
+        '<b>Tra cứu theo khoa/cá nhân</b>: heatmap khoa/cá nhân theo Quý hoặc theo Chuyên đề, xem theo chi phí hoặc số lượt.',
+        '<b>Tra cứu trang thiết bị BHYT</b>: theo dõi tình trạng hồ sơ pháp lý trang thiết bị, KPI/biểu đồ rủi ro.',
         '<b>Risk Score</b>: điểm rủi ro từng chuyên đề trong 1 kỳ, kèm đèn giao thông 🔴🟡🟢.',
-        '<b>Kỳ & Danh mục</b>: doanh thu BHYT theo kì (quý, hoặc đợt thanh tra/kiểm toán đột xuất...), và map mã Phụ lục → Nhóm.',
-        '<b>Thư viện tra cứu</b>: gồm 3 mục — Chuyên đề (cơ sở pháp lý/thanh toán/quy tắc giám định), DVKT bắt buộc mã máy, và Thời gian thực hiện DVKT.',
+        '<b>Thư viện tra cứu tham khảo</b>: gồm 3 mục — Chuyên đề (cơ sở pháp lý/thanh toán/quy tắc giám định), DVKT bắt buộc mã máy, và Thời gian thực hiện DVKT.',
+        '<b>Kỳ & Danh mục</b> (chỉ Editor thấy): doanh thu BHYT theo kì (quý, hoặc đợt thanh tra/kiểm toán đột xuất...), và map mã Phụ lục → Nhóm.',
       ])}
       ${guideSection('3. Vai trò', [
         '<b>Editor</b>: sửa/thêm/xoá dữ liệu, import Excel.',
