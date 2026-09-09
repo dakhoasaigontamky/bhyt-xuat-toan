@@ -91,7 +91,7 @@ function buildNormalizer(values) {
 
 let state = {
   user: null, role: 'viewer',
-  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de',
+  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '',
   tab: 'overview',
   dashYear: 'ALL', dashQuarter: 'ALL', paretoScope: 'filtered',
   filterKhoa: 'ALL', filterBacSi: 'ALL', filterNhom: 'ALL', filterCause: 'ALL', filterRemediator: 'ALL',
@@ -166,7 +166,7 @@ async function afterLogin(session) {
 }
 async function logout() {
   await sb.auth.signOut();
-  state = { ...state, user: null, role: 'viewer', lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], dvktList: [], tab: 'overview' };
+  state = { ...state, user: null, role: 'viewer', lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], dvktList: [], dvktTimeList: [], tab: 'overview' };
 }
 async function handleChangePassword() {
   const newPw = document.getElementById('pw-new').value;
@@ -202,7 +202,7 @@ async function fetchAllRows(table, orderCols, filterFn) {
 }
 
 async function loadAll() {
-  const [lines, trash, pers, cats, refs, aliases, khoaAliases, equipment, dvktList] = await Promise.all([
+  const [lines, trash, pers, cats, refs, aliases, khoaAliases, equipment, dvktList, dvktTimeList] = await Promise.all([
     fetchAllRows('bhyt_lines', null, (q) => q.is('deleted_at', null)),
     fetchAllRows('bhyt_lines', ['deleted_at'], (q) => q.not('deleted_at', 'is', null)),
     fetchAllRows('bhyt_periods', ['year', 'quarter']),
@@ -212,6 +212,7 @@ async function loadAll() {
     fetchAllRows('bhyt_khoa_aliases', ['alias_name']),
     fetchAllRows('bhyt_equipment', ['stt']),
     fetchAllRows('bhyt_dvkt_required_machine', ['stt']),
+    fetchAllRows('bhyt_dvkt_thoigian', ['id']),
   ]);
   state.lines = lines || [];
   state.trash = trash || [];
@@ -222,6 +223,7 @@ async function loadAll() {
   state.khoaAliases = khoaAliases || [];
   state.equipment = equipment || [];
   state.dvktList = dvktList || [];
+  state.dvktTimeList = dvktTimeList || [];
   state.khoaNorm = buildKhoaNormalizer();
   state.equipKhoaNorm = buildEquipKhoaNormalizer();
   state.bacSiNorm = buildNormalizer(state.lines.map((l) => l.individual));
@@ -1610,11 +1612,12 @@ function nl2br(s) { return escapeHtml(s).replace(/\n/g, '<br/>'); }
 
 function referenceHTML() {
   return `
-    <div class="flex text-sm rounded-md border border-slate-300 overflow-hidden mb-4 w-fit">
+    <div class="flex text-sm rounded-md border border-slate-300 overflow-hidden mb-4 w-fit flex-wrap">
       <button data-ref-subtab="chuyen_de" class="px-4 py-2 font-medium ${state.refSubTab === 'chuyen_de' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Chuyên đề</button>
       <button data-ref-subtab="dvkt" class="px-4 py-2 font-medium ${state.refSubTab === 'dvkt' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">DVKT bắt buộc mã máy</button>
+      <button data-ref-subtab="dvkt_time" class="px-4 py-2 font-medium ${state.refSubTab === 'dvkt_time' ? 'bg-blue-900 text-white' : 'bg-white text-slate-600'}">Thời gian thực hiện DVKT</button>
     </div>
-    ${state.refSubTab === 'dvkt' ? referenceDvktHTML() : referenceChuyenDeHTML()}
+    ${state.refSubTab === 'dvkt' ? referenceDvktHTML() : state.refSubTab === 'dvkt_time' ? referenceDvktTimeHTML() : referenceChuyenDeHTML()}
   `;
 }
 
@@ -1674,6 +1677,39 @@ function referenceDvktHTML() {
         <div class="px-4 py-2.5 flex items-start gap-3">
           <span class="text-xs font-mono text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 whitespace-nowrap mt-0.5">${escapeHtml(d.ma_dvkt || '')}</span>
           <span class="text-sm text-slate-700">${escapeHtml(d.ten_dvkt_phe_duyet || d.ten_dvkt_tt23 || '')}</span>
+        </div>`).join('')}
+    </div>`}
+  `;
+}
+
+function referenceDvktTimeHTML() {
+  const canEdit = state.role === 'editor';
+  const q = state.dvktTimeSearch.trim().toLowerCase();
+  const hasSearch = q.length > 0;
+  const rows = hasSearch ? state.dvktTimeList.filter((d) => [d.ten_dich_vu, d.khoa_phong, d.ten_nhom_cha, d.dvkt_id].some((f) => (f || '').toLowerCase().includes(q))).slice(0, 200) : [];
+
+  return `
+    <div class="mb-4">
+      <p class="text-sm text-slate-500 mb-3">Danh mục ${state.dvktTimeList.length.toLocaleString('vi-VN')} dịch vụ — tra cứu <b>thời gian tối thiểu thực hiện</b> theo Khoa/Phòng, kèm căn cứ/link quyết định liên quan.</p>
+      <div class="flex flex-wrap gap-2 items-center">
+        <input id="dvkt-time-search" type="text" placeholder="Nhập tên dịch vụ hoặc khoa/phòng để tra cứu..." value="${escapeHtml(state.dvktTimeSearch)}" class="border border-slate-300 rounded-md px-3 py-2 text-sm flex-1 min-w-[280px]" />
+        ${canEdit ? `<input type="file" id="dvkt-time-import-file" accept=".xlsx,.xls" class="hidden" /><button id="btn-dvkt-time-import" class="border border-slate-300 text-slate-700 rounded-md px-3 py-2 text-sm font-medium hover:bg-slate-50">Import Excel</button>` : ''}
+      </div>
+    </div>
+    <div id="dvkt-time-import-msg"></div>
+    ${!hasSearch ? `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Nhập tên dịch vụ hoặc khoa/phòng ở ô trên để tra cứu (danh mục có ${state.dvktTimeList.length.toLocaleString('vi-VN')} dịch vụ)</div>` : `
+    <div class="text-xs text-slate-400 mb-2">${rows.length}${rows.length === 200 ? '+' : ''} kết quả${rows.length === 200 ? ' (chỉ hiện 200 đầu tiên, gõ cụ thể hơn để thu hẹp)' : ''}</div>
+    <div class="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
+      ${rows.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center">Không tìm thấy dịch vụ nào khớp</div>' : rows.map((d) => `
+        <div class="px-4 py-2.5">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <span class="text-sm font-medium text-slate-800">${escapeHtml(d.ten_dich_vu || '')}</span>
+              <span class="text-xs text-slate-400 ml-2">${escapeHtml(d.khoa_phong || '')}</span>
+            </div>
+            ${d.thoi_gian_toi_thieu != null ? `<span class="text-xs font-medium rounded px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">${d.thoi_gian_toi_thieu} phút</span>` : ''}
+          </div>
+          ${d.ghi_chu || d.link_url ? `<div class="text-xs text-slate-500 mt-1">${d.ghi_chu ? escapeHtml(d.ghi_chu) : ''}${d.ghi_chu && d.link_url ? ' — ' : ''}${d.link_url ? `<a href="${escapeHtml(d.link_url)}" target="_blank" rel="noopener" class="text-blue-700 hover:underline">${escapeHtml(d.link_text || 'Xem văn bản')}</a>` : ''}</div>` : ''}
         </div>`).join('')}
     </div>`}
   `;
@@ -2077,6 +2113,55 @@ async function handleDvktImport(ev) {
     setTimeout(() => { msgEl.innerHTML = ''; }, 8000);
   }
 }
+async function handleDvktTimeImport(ev) {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  const msgEl = document.getElementById('dvkt-time-import-msg');
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const sheetName = wb.SheetNames.find((n) => /tổng hợp/i.test(n)) || wb.SheetNames[wb.SheetNames.length - 1];
+    const ws = wb.Sheets[sheetName];
+    if (!ws || !ws['!ref']) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không tìm thấy sheet dữ liệu.</div>`; return; }
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const rows = [];
+    // Cột (0-indexed): 0=ID Nhóm cha, 1=Tên Nhóm cha, 2=ID, 3=Tên dịch vụ, 4=Khoa/Phòng, 5=Thời gian tối thiểu, 6=Ghi Chú, 7=Link
+    for (let r = 1; r <= range.e.r; r++) {
+      const get = (c) => ws[XLSX.utils.encode_cell({ r, c })];
+      const tenDichVuCell = get(3);
+      if (!tenDichVuCell || tenDichVuCell.v === undefined || tenDichVuCell.v === '') continue;
+      const linkCell = get(7);
+      const thoiGianRaw = get(5) ? get(5).v : null;
+      const thoiGianNum = Number(thoiGianRaw);
+      rows.push({
+        id_nhom_cha: (() => { const n = Number(get(0) ? get(0).v : null); return isNaN(n) ? null : n; })(),
+        ten_nhom_cha: String((get(1) && get(1).v) || '').trim(),
+        dvkt_id: String((get(2) && get(2).v) || '').trim(),
+        ten_dich_vu: String(tenDichVuCell.v || '').trim(),
+        khoa_phong: String((get(4) && get(4).v) || '').trim(),
+        thoi_gian_toi_thieu: (thoiGianRaw === null || thoiGianRaw === '' || isNaN(thoiGianNum)) ? null : thoiGianNum,
+        ghi_chu: String((get(6) && get(6).v) || '').trim(),
+        link_text: String((linkCell && linkCell.v) || '').trim(),
+        link_url: (linkCell && linkCell.l && linkCell.l.Target) ? linkCell.l.Target : '',
+      });
+    }
+    if (rows.length === 0) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không đọc được dòng nào hợp lệ.</div>`; return; }
+    const CHUNK = 500;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const { error } = await sb.from('bhyt_dvkt_thoigian').insert(rows.slice(i, i + CHUNK));
+      if (error) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Lỗi khi ghi: ${escapeHtml(error.message)}</div>`; return; }
+    }
+    await loadAll();
+    const withLink = rows.filter((r) => r.link_url).length;
+    msgEl.innerHTML = `<div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-3 py-2 text-sm mb-3">Đã thêm ${rows.length} dòng (${withLink} dòng có link).</div>`;
+    renderTab();
+  } catch (err) {
+    msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không đọc được file: ${escapeHtml(err.message || String(err))}</div>`;
+  } finally {
+    ev.target.value = '';
+    setTimeout(() => { msgEl.innerHTML = ''; }, 8000);
+  }
+}
 async function handleEquipmentImport(ev) {
   const file = ev.target.files?.[0];
   if (!file) return;
@@ -2271,6 +2356,16 @@ function attachTabEvents() {
   }
   if (state.tab === 'reference') {
     document.querySelectorAll('[data-ref-subtab]').forEach((btn) => { btn.onclick = () => { state.refSubTab = btn.dataset.refSubtab; renderTab(); }; });
+    const dvktTimeSearchEl = document.getElementById('dvkt-time-search');
+    if (dvktTimeSearchEl) {
+      dvktTimeSearchEl.addEventListener('input', (e) => { state.dvktTimeSearch = e.target.value; renderTab(); });
+      const val = dvktTimeSearchEl.value;
+      if (state._focusedBeforeRender === 'dvkt-time-search') { dvktTimeSearchEl.focus(); dvktTimeSearchEl.value = ''; dvktTimeSearchEl.value = val; }
+    }
+    const dvktTimeImportBtn = document.getElementById('btn-dvkt-time-import');
+    if (dvktTimeImportBtn) dvktTimeImportBtn.onclick = () => document.getElementById('dvkt-time-import-file').click();
+    const dvktTimeImportFile = document.getElementById('dvkt-time-import-file');
+    if (dvktTimeImportFile) dvktTimeImportFile.addEventListener('change', handleDvktTimeImport);
     const dvktSearchEl = document.getElementById('dvkt-search');
     if (dvktSearchEl) {
       dvktSearchEl.addEventListener('input', (e) => { state.dvktSearch = e.target.value; renderTab(); });
