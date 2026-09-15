@@ -91,7 +91,7 @@ function buildNormalizer(values) {
 
 let state = {
   user: null, role: 'viewer',
-  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', ngoaiKiemList: [], ngoaiKiemExpanded: new Set(),
+  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', ngoaiKiemList: [], ngoaiKiemExpanded: new Set(), ngoaiKiemEditingId: null,
   tab: 'overview',
   dashYear: 'ALL', dashQuarter: 'ALL', paretoScope: 'filtered',
   filterKhoa: 'ALL', filterBacSi: 'ALL', filterNhom: 'ALL', filterCause: 'ALL', filterRemediator: 'ALL',
@@ -103,6 +103,7 @@ let state = {
   rateChartRef: null, costRevenueChartRef: null, trendChartRef: null, paretoCostChartRef: null, paretoCountChartRef: null,
   topRepeatChartRef: null, topCostChartRef: null, topRepeatedCatChartRef: null, groupCostChartRef: null, khoaCostChartRef: null, searchResultChartRef: null, categoryTrendChartRef: null, overviewCatSearch: '',
   equipDossierCountChartRef: null, equipDossierRevenueChartRef: null, equipTopKhoaChartRef: null, equipOpStatusChartRef: null,
+  ngoaiKiemStatusCountChartRef: null, ngoaiKiemStatusRevenueChartRef: null, ngoaiKiemRiskChartRef: null,
 };
 
 // ---------------------------------------------------------------
@@ -613,6 +614,7 @@ function renderTab() {
   attachTabEvents();
   if (state.tab === 'overview') drawAllOverviewCharts();
   if (state.tab === 'equipment') drawEquipmentCharts();
+  if (state.tab === 'reference' && state.refSubTab === 'ngoai_kiem') drawNgoaiKiemCharts();
   if (state.tab === 'heatmap') {
     const sr = state._heatmapSearchResult;
     if (sr && sr.mode !== 'none') drawSearchResultChart(sr); else drawHeatmapTopCharts(state._heatmapTop10 || []);
@@ -1745,6 +1747,7 @@ function referenceDvktTimeHTML() {
 }
 
 function ngoaiKiemProgramCardHTML(ct, canEdit) {
+  if (state.ngoaiKiemEditingId === ct.id) return ngoaiKiemFormHTML(ct);
   const expanded = state.ngoaiKiemExpanded.has(String(ct.id));
   const isThamGia = (ct.section || '').includes('không') === false;
   const badge = isThamGia
@@ -1769,20 +1772,87 @@ function ngoaiKiemProgramCardHTML(ct, canEdit) {
           </div>
           ${ct.children && ct.children.length ? `
           <div class="text-xs text-slate-400 mb-1">Các dịch vụ/xét nghiệm cụ thể trong chương trình này</div>
-          <table class="w-full text-xs">
-            <thead class="text-slate-500 uppercase"><tr><th class="text-left py-1">Dịch vụ</th><th class="text-right py-1">Quý 1</th><th class="text-right py-1">Quý 2</th><th class="text-right py-1">Q1+Q2</th><th class="text-right py-1">Doanh thu 6 tháng</th></tr></thead>
+          <table class="w-full text-xs mb-3">
+            <thead class="text-slate-500 uppercase"><tr><th class="text-left py-1">Dịch vụ</th><th class="text-right py-1">Quý 1</th><th class="text-right py-1">Quý 2</th><th class="text-right py-1">Q1+Q2</th><th class="text-right py-1">Doanh thu 6 tháng</th><th></th></tr></thead>
             <tbody>
-              ${ct.children.map((cv) => `<tr class="border-t border-slate-100"><td class="py-1">${escapeHtml(cv.ten_dich_vu || '')}</td><td class="py-1 text-right">${fmtVND(cv.de_nghi_q1)}</td><td class="py-1 text-right">${fmtVND(cv.de_nghi_q2)}</td><td class="py-1 text-right">${fmtVND(cv.de_nghi_q1q2)}</td><td class="py-1 text-right">${fmtVND(cv.doanh_thu_6thang)}</td></tr>`).join('')}
+              ${ct.children.map((cv) => `<tr class="border-t border-slate-100" data-nk-child-id="${cv.id}">
+                <td class="py-1">${canEdit ? `<input data-nkc-field="ten_dich_vu" value="${escapeHtml(cv.ten_dich_vu || '')}" class="border border-slate-200 rounded px-1 py-0.5 w-full text-xs" />` : escapeHtml(cv.ten_dich_vu || '')}</td>
+                <td class="py-1 text-right">${canEdit ? `<input data-nkc-field="de_nghi_q1" inputmode="numeric" value="${cv.de_nghi_q1 != null ? fmtVND(cv.de_nghi_q1) : ''}" class="border border-slate-200 rounded px-1 py-0.5 w-24 text-xs text-right" />` : fmtVND(cv.de_nghi_q1)}</td>
+                <td class="py-1 text-right">${canEdit ? `<input data-nkc-field="de_nghi_q2" inputmode="numeric" value="${cv.de_nghi_q2 != null ? fmtVND(cv.de_nghi_q2) : ''}" class="border border-slate-200 rounded px-1 py-0.5 w-24 text-xs text-right" />` : fmtVND(cv.de_nghi_q2)}</td>
+                <td class="py-1 text-right">${canEdit ? `<input data-nkc-field="de_nghi_q1q2" inputmode="numeric" value="${cv.de_nghi_q1q2 != null ? fmtVND(cv.de_nghi_q1q2) : ''}" class="border border-slate-200 rounded px-1 py-0.5 w-24 text-xs text-right" />` : fmtVND(cv.de_nghi_q1q2)}</td>
+                <td class="py-1 text-right">${canEdit ? `<input data-nkc-field="doanh_thu_6thang" inputmode="numeric" value="${cv.doanh_thu_6thang != null ? fmtVND(cv.doanh_thu_6thang) : ''}" class="border border-slate-200 rounded px-1 py-0.5 w-24 text-xs text-right" />` : fmtVND(cv.doanh_thu_6thang)}</td>
+                <td class="py-1 text-center">${canEdit ? `<button data-nk-child-delete="${cv.id}" class="text-slate-400 hover:text-red-600">✕</button>` : ''}</td>
+              </tr>`).join('')}
             </tbody>
           </table>` : ''}
+          ${canEdit ? `<div class="flex gap-3 pt-1"><button data-ngoaikiem-edit="${ct.id}" class="text-xs text-blue-700 hover:underline">Sửa</button><button data-ngoaikiem-delete="${ct.id}" class="text-xs text-red-600 hover:underline">Xoá chương trình</button></div>` : ''}
         </div>` : ''}
     </div>`;
+}
+function ngoaiKiemFormHTML(ct) {
+  const isThamGia = (ct.section || '').includes('không') === false;
+  return `
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4" data-ngoaikiem-form-id="${ct.id}">
+      <div class="grid md:grid-cols-2 gap-3 mb-3">
+        <div class="md:col-span-2"><label class="text-xs text-slate-600">Tên chương trình *</label><input data-nkf="ten_chuong_trinh" type="text" value="${escapeHtml(ct.ten_chuong_trinh || '')}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Tình trạng tham gia</label><select data-nkf="section" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm bg-white"><option value="Chương trình tham gia 2026" ${isThamGia ? 'selected' : ''}>Đang tham gia</option><option value="Chương trình không tham gia 2026" ${!isThamGia ? 'selected' : ''}>Chưa tham gia</option></select></div>
+        <div></div>
+        <div><label class="text-xs text-slate-600">Giá mẫu (đ)</label><input data-nkf="gia_mau" inputmode="numeric" value="${ct.gia_mau != null ? fmtVND(ct.gia_mau) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">NCC mẫu</label><input data-nkf="ncc_mau" type="text" value="${escapeHtml(ct.ncc_mau || '')}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Giá phân tích (đ)</label><input data-nkf="gia_phan_tich" inputmode="numeric" value="${ct.gia_phan_tich != null ? fmtVND(ct.gia_phan_tich) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Tổng chi phí tham gia/năm (đ)</label><input data-nkf="tong_chi_phi_nam" inputmode="numeric" value="${ct.tong_chi_phi_nam != null ? fmtVND(ct.tong_chi_phi_nam) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Đề nghị BHYT — Quý 1 (đ)</label><input data-nkf="de_nghi_q1" inputmode="numeric" value="${ct.de_nghi_q1 != null ? fmtVND(ct.de_nghi_q1) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Đề nghị BHYT — Quý 2 (đ)</label><input data-nkf="de_nghi_q2" inputmode="numeric" value="${ct.de_nghi_q2 != null ? fmtVND(ct.de_nghi_q2) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Đề nghị BHYT — Q1+Q2 (đ)</label><input data-nkf="de_nghi_q1q2" inputmode="numeric" value="${ct.de_nghi_q1q2 != null ? fmtVND(ct.de_nghi_q1q2) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Doanh thu 6 tháng đầu năm (đ)</label><input data-nkf="doanh_thu_6thang" inputmode="numeric" value="${ct.doanh_thu_6thang != null ? fmtVND(ct.doanh_thu_6thang) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Tỉ lệ % chi phí ngoại kiểm (chỉ nhóm đã tham gia)</label><input data-nkf="ty_le_chi_phi" type="text" value="${ct.ty_le_chi_phi != null ? ct.ty_le_chi_phi : ''}" placeholder="VD 0.034 = 3.4%" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Nguy cơ xuất toán (chỉ nhóm chưa tham gia, đ)</label><input data-nkf="nguy_co_xuat_toan" inputmode="numeric" value="${ct.nguy_co_xuat_toan != null ? fmtVND(ct.nguy_co_xuat_toan) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Năm 2027 — Phí mẫu (đ)</label><input data-nkf="nam2027_phi_mau" inputmode="numeric" value="${ct.nam2027_phi_mau != null ? fmtVND(ct.nam2027_phi_mau) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Năm 2027 — NCC mẫu</label><input data-nkf="nam2027_ncc_mau" type="text" value="${escapeHtml(ct.nam2027_ncc_mau || '')}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+        <div><label class="text-xs text-slate-600">Năm 2027 — Phí phân tích (đ)</label><input data-nkf="nam2027_phi_phan_tich" inputmode="numeric" value="${ct.nam2027_phi_phan_tich != null ? fmtVND(ct.nam2027_phi_phan_tich) : ''}" class="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm" /></div>
+      </div>
+      <div class="flex gap-2">
+        <button data-ngoaikiem-save="${ct.id}" class="bg-blue-900 text-white rounded-md px-3 py-1.5 text-sm font-medium hover:bg-blue-800">Lưu</button>
+        <button data-ngoaikiem-cancel="${ct.id}" class="border border-slate-300 rounded-md px-3 py-1.5 text-sm">Huỷ</button>
+      </div>
+    </div>`;
+}
+function ngoaiKiemDashboardHTML(thamGia, khongThamGia) {
+  const total = thamGia.length + khongThamGia.length;
+  const tongChiPhiThamGia = thamGia.reduce((s, ct) => s + (Number(ct.tong_chi_phi_nam) || 0), 0);
+  const tongNguyCo = khongThamGia.reduce((s, ct) => s + (Number(ct.nguy_co_xuat_toan) || 0), 0);
+  const tongDoanhThuThamGia = thamGia.reduce((s, ct) => s + (Number(ct.doanh_thu_6thang) || 0), 0);
+  const pctThamGia = total ? (thamGia.length / total) * 100 : 0;
+  const topRisk = [...khongThamGia].sort((a, b) => (Number(b.nguy_co_xuat_toan) || 0) - (Number(a.nguy_co_xuat_toan) || 0)).slice(0, 10);
+
+  return `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+      ${statCard('Tổng số chương trình', total.toLocaleString('vi-VN'), 'blue')}
+      ${statCard('Chưa tham gia (nguy cơ xuất toán)', khongThamGia.length.toLocaleString('vi-VN'), khongThamGia.length > 0 ? 'red' : 'emerald')}
+      ${statCard('Doanh thu đang có nguy cơ xuất toán', fmtVND(tongNguyCo) + ' đ', tongNguyCo > 0 ? 'red' : 'emerald')}
+      ${statCard('Tỉ lệ chương trình đã tham gia', pctThamGia.toFixed(1) + '%', 'emerald')}
+    </div>
+    <div class="grid md:grid-cols-2 gap-4 mb-4">
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Tình trạng tham gia — theo số lượng chương trình</h3>
+        <div style="height:260px"><canvas id="ngoaikiem-status-count-chart"></canvas></div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-slate-700 mb-2">Doanh thu — an toàn (đã tham gia) vs nguy cơ (chưa tham gia)</h3>
+        <div style="height:260px"><canvas id="ngoaikiem-status-revenue-chart"></canvas></div>
+      </div>
+    </div>
+    ${topRisk.length > 0 ? `
+    <div class="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+      <h3 class="text-sm font-semibold text-slate-700 mb-2">⚠ Ưu tiên xử lý — chương trình chưa tham gia, nguy cơ xuất toán cao nhất</h3>
+      <div style="height:${Math.max(160, topRisk.length * 34)}px"><canvas id="ngoaikiem-risk-chart"></canvas></div>
+    </div>` : ''}
+  `;
 }
 function referenceNgoaiKiemHTML() {
   const canEdit = state.role === 'editor';
   const thamGia = state.ngoaiKiemList.filter((ct) => !(ct.section || '').includes('không'));
   const khongThamGia = state.ngoaiKiemList.filter((ct) => (ct.section || '').includes('không'));
-  const tongNguyCo = khongThamGia.reduce((s, ct) => s + (Number(ct.nguy_co_xuat_toan) || 0), 0);
 
   return `
     <div class="mb-4">
@@ -1792,11 +1862,7 @@ function referenceNgoaiKiemHTML() {
       </div>
     </div>
     <div id="ngoaikiem-import-msg"></div>
-    ${khongThamGia.length > 0 ? `
-    <div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-3">
-      <span class="text-sm font-medium text-red-700">⚠ Tổng doanh thu đang có nguy cơ xuất toán (chưa tham gia ngoại kiểm)</span>
-      <span class="text-lg font-bold text-red-700 ml-2">${fmtVND(tongNguyCo)} đ</span>
-    </div>` : ''}
+    ${state.ngoaiKiemList.length > 0 ? ngoaiKiemDashboardHTML(thamGia, khongThamGia) : ''}
     ${thamGia.length > 0 ? `<h3 class="text-sm font-semibold text-slate-700 mb-2">✅ Đang tham gia Ngoại kiểm</h3><div class="space-y-2 mb-5">${thamGia.map((ct) => ngoaiKiemProgramCardHTML(ct, canEdit)).join('')}</div>` : ''}
     ${khongThamGia.length > 0 ? `<h3 class="text-sm font-semibold text-slate-700 mb-2">⚠ Chưa tham gia Ngoại kiểm</h3><div class="space-y-2">${khongThamGia.map((ct) => ngoaiKiemProgramCardHTML(ct, canEdit)).join('')}</div>` : ''}
     ${state.ngoaiKiemList.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Chưa có dữ liệu — bấm Import Excel để nhập danh mục.</div>' : ''}
@@ -2052,6 +2118,54 @@ function equipFormHTML(e) {
     </div>`;
 }
 
+function drawNgoaiKiemCharts() {
+  const thamGia = state.ngoaiKiemList.filter((ct) => !(ct.section || '').includes('không'));
+  const khongThamGia = state.ngoaiKiemList.filter((ct) => (ct.section || '').includes('không'));
+
+  const ctx1 = document.getElementById('ngoaikiem-status-count-chart');
+  if (state.ngoaiKiemStatusCountChartRef) { state.ngoaiKiemStatusCountChartRef.destroy(); state.ngoaiKiemStatusCountChartRef = null; }
+  if (ctx1 && (thamGia.length + khongThamGia.length) > 0) {
+    state.ngoaiKiemStatusCountChartRef = new Chart(ctx1, {
+      type: 'doughnut',
+      data: { labels: ['Đã tham gia', 'Chưa tham gia'], datasets: [{ data: [thamGia.length, khongThamGia.length], backgroundColor: ['#059669', '#dc2626'], borderWidth: 2, borderColor: '#fff' }] },
+      plugins: [outsideLabelPlugin()],
+      options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 24, bottom: 24, left: 70, right: 70 } },
+        plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 14 } }, datalabels: { display: false } },
+      },
+    });
+  }
+
+  const doanhThuAnToan = thamGia.reduce((s, ct) => s + (Number(ct.doanh_thu_6thang) || 0), 0);
+  const doanhThuNguyCo = khongThamGia.reduce((s, ct) => s + (Number(ct.nguy_co_xuat_toan) || 0), 0);
+  const ctx2 = document.getElementById('ngoaikiem-status-revenue-chart');
+  if (state.ngoaiKiemStatusRevenueChartRef) { state.ngoaiKiemStatusRevenueChartRef.destroy(); state.ngoaiKiemStatusRevenueChartRef = null; }
+  if (ctx2 && (doanhThuAnToan + doanhThuNguyCo) > 0) {
+    state.ngoaiKiemStatusRevenueChartRef = new Chart(ctx2, {
+      type: 'doughnut',
+      data: { labels: ['An toàn (đã tham gia)', 'Nguy cơ (chưa tham gia)'], datasets: [{ data: [doanhThuAnToan, doanhThuNguyCo], backgroundColor: ['#059669', '#dc2626'], borderWidth: 2, borderColor: '#fff' }] },
+      plugins: [outsideLabelPlugin()],
+      options: { responsive: true, maintainAspectRatio: false, layout: { padding: { top: 24, bottom: 24, left: 70, right: 70 } },
+        plugins: { legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 14 } }, datalabels: { display: false } },
+      },
+    });
+  }
+
+  const topRisk = [...khongThamGia].sort((a, b) => (Number(b.nguy_co_xuat_toan) || 0) - (Number(a.nguy_co_xuat_toan) || 0)).slice(0, 10);
+  const ctx3 = document.getElementById('ngoaikiem-risk-chart');
+  if (state.ngoaiKiemRiskChartRef) { state.ngoaiKiemRiskChartRef.destroy(); state.ngoaiKiemRiskChartRef = null; }
+  if (ctx3 && topRisk.length > 0) {
+    state.ngoaiKiemRiskChartRef = new Chart(ctx3, {
+      type: 'bar',
+      data: { labels: topRisk.map((ct) => ct.ten_chuong_trinh), datasets: [{ label: 'Nguy cơ xuất toán (đ)', data: topRisk.map((ct) => Number(ct.nguy_co_xuat_toan) || 0), backgroundColor: '#dc2626',
+        datalabels: { anchor: 'end', align: 'end', color: '#dc2626', font: { weight: 'bold', size: 10 }, formatter: (v) => fmtVND(v) } }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, layout: { padding: { right: 90 } },
+        scales: { x: { title: { display: true, text: 'đ' } } }, plugins: { legend: { display: false } },
+        onHover: onHoverPointer,
+        onClick: (evt, elements) => { if (elements.length) { const id = topRisk[elements[0].index].id; state.ngoaiKiemExpanded.add(String(id)); renderTab(); } },
+      },
+    });
+  }
+}
 function drawEquipmentCharts() {
   const all = state.equipment;
   const byCount = {}; const byRevenue = {};
@@ -2200,6 +2314,59 @@ async function handleDvktImport(ev) {
     ev.target.value = '';
     setTimeout(() => { msgEl.innerHTML = ''; }, 8000);
   }
+}
+function readNgoaiKiemForm(ctId) {
+  const box = document.querySelector(`[data-ngoaikiem-form-id="${ctId}"]`);
+  const get = (f) => box.querySelector(`[data-nkf="${f}"]`)?.value?.trim() || '';
+  return {
+    ten_chuong_trinh: get('ten_chuong_trinh'), section: get('section'),
+    gia_mau: parseMoney(get('gia_mau')) || null, ncc_mau: get('ncc_mau') || null,
+    gia_phan_tich: parseMoney(get('gia_phan_tich')) || null, tong_chi_phi_nam: parseMoney(get('tong_chi_phi_nam')) || null,
+    de_nghi_q1: parseMoney(get('de_nghi_q1')) || null, de_nghi_q2: parseMoney(get('de_nghi_q2')) || null, de_nghi_q1q2: parseMoney(get('de_nghi_q1q2')) || null,
+    doanh_thu_6thang: parseMoney(get('doanh_thu_6thang')) || null,
+    ty_le_chi_phi: get('ty_le_chi_phi') ? Number(get('ty_le_chi_phi')) : null,
+    nguy_co_xuat_toan: parseMoney(get('nguy_co_xuat_toan')) || null,
+    nam2027_phi_mau: parseMoney(get('nam2027_phi_mau')) || null, nam2027_ncc_mau: get('nam2027_ncc_mau') || null, nam2027_phi_phan_tich: parseMoney(get('nam2027_phi_phan_tich')) || null,
+  };
+}
+async function saveNgoaiKiemForm(idStr) {
+  const id = Number(idStr);
+  const payload = readNgoaiKiemForm(id);
+  if (!payload.ten_chuong_trinh) { alert('Vui lòng nhập tên chương trình.'); return; }
+  const { error } = await sb.from('bhyt_ngoai_kiem_chuong_trinh').update(payload).eq('id', id);
+  if (error) { alert('Lỗi khi lưu: ' + error.message); return; }
+  const ct = state.ngoaiKiemList.find((c) => c.id === id);
+  if (ct) Object.assign(ct, payload);
+  state.ngoaiKiemEditingId = null;
+  renderTab();
+}
+async function deleteNgoaiKiemProgram(idStr) {
+  if (!confirm('Xoá chương trình này (và toàn bộ dịch vụ con bên trong)? Không thể hoàn tác.')) return;
+  const id = Number(idStr);
+  const { error } = await sb.from('bhyt_ngoai_kiem_chuong_trinh').delete().eq('id', id);
+  if (error) { alert('Lỗi khi xoá: ' + error.message); return; }
+  state.ngoaiKiemList = state.ngoaiKiemList.filter((c) => c.id !== id);
+  renderTab();
+}
+async function saveNgoaiKiemChildField(childId, field, value) {
+  const patch = { [field]: field === 'ten_dich_vu' ? value : (parseMoney(value) || null) };
+  const { error } = await sb.from('bhyt_ngoai_kiem_dich_vu').update(patch).eq('id', Number(childId));
+  if (error) { alert('Lỗi khi lưu: ' + error.message); return; }
+  for (const ct of state.ngoaiKiemList) {
+    const child = (ct.children || []).find((c) => String(c.id) === String(childId));
+    if (child) { Object.assign(child, patch); break; }
+  }
+}
+async function deleteNgoaiKiemChild(childId) {
+  if (!confirm('Xoá dịch vụ này khỏi chương trình?')) return;
+  const { error } = await sb.from('bhyt_ngoai_kiem_dich_vu').delete().eq('id', Number(childId));
+  if (error) { alert('Lỗi khi xoá: ' + error.message); return; }
+  for (const ct of state.ngoaiKiemList) {
+    const before = (ct.children || []).length;
+    ct.children = (ct.children || []).filter((c) => String(c.id) !== String(childId));
+    if (ct.children.length !== before) break;
+  }
+  renderTab();
 }
 async function handleNgoaiKiemImport(ev) {
   const file = ev.target.files?.[0];
@@ -2514,6 +2681,15 @@ function attachTabEvents() {
     if (ngoaiKiemImportBtn) ngoaiKiemImportBtn.onclick = () => document.getElementById('ngoaikiem-import-file').click();
     const ngoaiKiemImportFile = document.getElementById('ngoaikiem-import-file');
     if (ngoaiKiemImportFile) ngoaiKiemImportFile.addEventListener('change', handleNgoaiKiemImport);
+    document.querySelectorAll('[data-ngoaikiem-edit]').forEach((btn) => { btn.onclick = () => { state.ngoaiKiemEditingId = Number(btn.dataset.ngoaikiemEdit); renderTab(); }; });
+    document.querySelectorAll('[data-ngoaikiem-delete]').forEach((btn) => { btn.onclick = () => deleteNgoaiKiemProgram(btn.dataset.ngoaikiemDelete); });
+    document.querySelectorAll('[data-ngoaikiem-cancel]').forEach((btn) => { btn.onclick = () => { state.ngoaiKiemEditingId = null; renderTab(); }; });
+    document.querySelectorAll('[data-ngoaikiem-save]').forEach((btn) => { btn.onclick = () => saveNgoaiKiemForm(btn.dataset.ngoaikiemSave); });
+    document.querySelectorAll('[data-nk-child-id]').forEach((tr) => {
+      tr.querySelectorAll('[data-nkc-field]').forEach((input) => input.addEventListener('change', () => saveNgoaiKiemChildField(tr.dataset.nkChildId, input.dataset.nkcField, input.value)));
+      const delBtn = tr.querySelector('[data-nk-child-delete]');
+      if (delBtn) delBtn.onclick = () => deleteNgoaiKiemChild(tr.dataset.nkChildId);
+    });
     const dvktTimeSearchEl = document.getElementById('dvkt-time-search');
     if (dvktTimeSearchEl) {
       dvktTimeSearchEl.addEventListener('input', (e) => { state.dvktTimeSearch = e.target.value; renderTab(); });
