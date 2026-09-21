@@ -176,7 +176,7 @@ async function afterLogin(session) {
   const { data: profile } = await sb.from('bhyt_user_profiles').select('role').eq('id', session.user.id).single();
   state.role = profile?.role || 'viewer';
   if (state.role !== 'editor' && state.tab === 'setup') state.tab = 'overview';
-  if (state.role === 'hod' && state.tab !== 'reference') state.tab = 'reference';
+  if (state.role === 'hod' && !['reference', 'risk'].includes(state.tab)) state.tab = 'reference';
   await loadAll();
   render();
 }
@@ -557,7 +557,7 @@ function render() {
           ${isHod ? '' : navItem('details', 'Tra cứu theo kỳ xuất toán', '📋')}
           ${isHod ? '' : navItem('heatmap', 'Tra cứu theo khoa/cá nhân', '🗺️')}
           ${isHod ? '' : navItem('equipment', 'Tra cứu trang thiết bị BHYT', '🖥️')}
-          ${isHod ? '' : navItem('risk', 'Risk Score', '🚦')}
+          ${navItem('risk', 'Risk Score', '🚦')}
           ${navItem('reference', 'Thư viện tra cứu tham khảo', '🔎')}
           ${isHod ? '' : navItem('ngoaikiem', 'Tra cứu xét nghiệm', '🧪')}
           ${canEdit ? navItem('trash', `Thùng rác${state.trash.length ? ` (${state.trash.length})` : ''}`, '🗑️') : ''}
