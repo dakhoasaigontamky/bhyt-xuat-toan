@@ -557,9 +557,9 @@ function render() {
           ${isHod ? '' : navItem('details', 'Tra cứu theo kỳ xuất toán', '📋')}
           ${isHod ? '' : navItem('heatmap', 'Tra cứu theo khoa/cá nhân', '🗺️')}
           ${isHod ? '' : navItem('equipment', 'Tra cứu trang thiết bị BHYT', '🖥️')}
+          ${isHod ? '' : navItem('ngoaikiem', 'Tra cứu xét nghiệm', '🧪')}
           ${navItem('risk', 'Risk Score', '🚦')}
           ${navItem('reference', 'Thư viện tra cứu tham khảo', '🔎')}
-          ${isHod ? '' : navItem('ngoaikiem', 'Tra cứu xét nghiệm', '🧪')}
           ${canEdit ? navItem('trash', `Thùng rác${state.trash.length ? ` (${state.trash.length})` : ''}`, '🗑️') : ''}
           ${isHod ? '' : navItem('guide', 'Hướng dẫn', '❔')}
         </nav>
