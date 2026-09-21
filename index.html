@@ -178,6 +178,7 @@ async function afterLogin(session) {
   state.role = profile?.role || 'viewer';
   if (state.role !== 'editor' && state.tab === 'setup') state.tab = 'overview';
   if (state.role === 'hod' && !['reference', 'risk'].includes(state.tab)) state.tab = 'reference';
+  if (state.role === 'khoaduoc_xn' && !['reference', 'risk', 'ngoaikiem'].includes(state.tab)) state.tab = 'risk';
   await loadAll();
   render();
 }
@@ -516,6 +517,8 @@ function riskScoreForQuarter(qKeyStr) {
 function render() {
   const canEdit = state.role === 'editor';
   const isHod = state.role === 'hod';
+  const isKhoaDuocXN = state.role === 'khoaduoc_xn';
+  const isRestricted = isHod || isKhoaDuocXN;
   app.innerHTML = `
     <div class="min-h-screen">
       <div id="app-header" class="bg-brand-900 text-white flex items-center justify-between gap-3 px-4 py-3 sticky top-0 z-40 flex-wrap">
@@ -534,7 +537,7 @@ function render() {
           ${canEdit ? `<input type="file" id="import-file" accept=".xlsx,.xls" class="hidden" />
           <button id="btn-import" class="bg-white text-brand-900 hover:bg-brand-50 rounded-md px-3 py-2 text-sm font-medium">Import Excel</button>` : ''}
           ${canEdit ? `<button id="btn-settings" title="Kỳ &amp; Danh mục" class="border border-brand-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-brand-800 ${state.tab === 'setup' ? 'bg-brand-800' : ''}">⚙️</button>` : ''}
-          ${isHod ? '' : `<button id="btn-export" class="border border-brand-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-brand-800">Export Excel</button>`}
+          ${isRestricted ? '' : `<button id="btn-export" class="border border-brand-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-brand-800">Export Excel</button>`}
           <div class="relative">
             <button id="btn-change-pw" class="border border-brand-600 text-white rounded-md px-3 py-2 text-sm font-medium hover:bg-brand-800">Đổi mật khẩu</button>
             ${state.showPwBox ? `
@@ -554,19 +557,19 @@ function render() {
       ${state.sidebarOpen ? '<div id="sidebar-backdrop" class="fixed inset-0 bg-black/30 z-20"></div>' : ''}
       <aside id="app-sidebar" class="fixed left-0 bottom-0 w-60 bg-brand-900 text-white flex flex-col z-30 transform transition-transform duration-200 ${state.sidebarOpen ? 'translate-x-0' : '-translate-x-full'}">
         <nav class="flex-1 py-3 overflow-y-auto">
-          ${isHod ? '' : navItem('overview', 'Tổng quan', '📊')}
-          ${isHod ? '' : navItem('details', 'Tra cứu theo kỳ xuất toán', '📋')}
-          ${isHod ? '' : navItem('heatmap', 'Tra cứu theo khoa/cá nhân', '🗺️')}
-          ${isHod ? '' : navItem('equipment', 'Tra cứu trang thiết bị BHYT', '🖥️')}
+          ${isRestricted ? '' : navItem('overview', 'Tổng quan', '📊')}
+          ${isRestricted ? '' : navItem('details', 'Tra cứu theo kỳ xuất toán', '📋')}
+          ${isRestricted ? '' : navItem('heatmap', 'Tra cứu theo khoa/cá nhân', '🗺️')}
+          ${isRestricted ? '' : navItem('equipment', 'Tra cứu trang thiết bị BHYT', '🖥️')}
           ${isHod ? '' : navItem('ngoaikiem', 'Tra cứu xét nghiệm', '🧪')}
           ${navItem('risk', 'Risk Score', '🚦')}
           ${navItem('reference', 'Thư viện tra cứu tham khảo', '🔎')}
           ${canEdit ? navItem('trash', `Thùng rác${state.trash.length ? ` (${state.trash.length})` : ''}`, '🗑️') : ''}
-          ${isHod ? '' : navItem('guide', 'Hướng dẫn', '❔')}
+          ${isRestricted ? '' : navItem('guide', 'Hướng dẫn', '❔')}
         </nav>
         <div class="px-4 py-3 border-t border-brand-800 text-xs text-brand-200">
           <div class="truncate">${state.user.email}</div>
-          <div class="mt-0.5">vai trò: <span class="font-semibold text-white">${canEdit ? 'Được sửa' : isHod ? 'HOD — Chỉ xem thư viện' : 'Chỉ xem'}</span></div>
+          <div class="mt-0.5">vai trò: <span class="font-semibold text-white">${canEdit ? 'Được sửa' : isHod ? 'HOD — Chỉ xem thư viện' : isKhoaDuocXN ? 'Khoa Dược/XN — Xem giới hạn' : 'Chỉ xem'}</span></div>
         </div>
       </aside>
 
@@ -2713,6 +2716,8 @@ function guideHTML() {
       ${guideSection('3. Vai trò', [
         '<b>Editor</b>: sửa/thêm/xoá dữ liệu, import Excel.',
         '<b>Viewer</b>: chỉ xem và export Excel.',
+        '<b>HOD</b>: chỉ xem Risk Score và Thư viện tra cứu tham khảo.',
+        '<b>Khoa Dược/XN</b>: chỉ xem Risk Score, Thư viện tra cứu tham khảo, và Tra cứu xét nghiệm.',
       ])}
     </div>`;
 }
