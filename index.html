@@ -121,7 +121,7 @@ function buildNormalizer(values) {
 
 let state = {
   user: null, role: 'viewer',
-  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', ngoaiKiemList: [], ngoaiKiemExpanded: new Set(), ngoaiKiemEditingId: null, ngoaiKiemAdding: false, ngoaiKiemSearch: '',
+  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', ngoaiKiemList: [], ngoaiKiemExpanded: new Set(), ngoaiKiemEditingId: null, ngoaiKiemAdding: false, ngoaiKiemSearch: '', pvhnList: [], pvhnSearch: '', pvhnChucDanh: 'ALL',
   tab: 'overview',
   dashKiFrom: 'ALL', dashKiTo: 'ALL', paretoScope: 'filtered',
   compareFromA: 'ALL', compareToA: 'ALL', compareFromB: 'ALL', compareToB: 'ALL', compareDimension: 'nhom',
@@ -237,7 +237,7 @@ async function fetchAllRows(table, orderCols, filterFn) {
 }
 
 async function loadAll() {
-  const [lines, trash, pers, cats, refs, aliases, khoaAliases, equipment, dvktList, dvktTimeList, ngoaiKiemCt, ngoaiKiemDv] = await Promise.all([
+  const [lines, trash, pers, cats, refs, aliases, khoaAliases, equipment, dvktList, dvktTimeList, ngoaiKiemCt, ngoaiKiemDv, pvhnList] = await Promise.all([
     fetchAllRows('bhyt_lines', null, (q) => q.is('deleted_at', null)),
     fetchAllRows('bhyt_lines', ['deleted_at'], (q) => q.not('deleted_at', 'is', null)),
     fetchAllRows('bhyt_periods', ['year', 'quarter']),
@@ -250,6 +250,7 @@ async function loadAll() {
     fetchAllRows('bhyt_dvkt_thoigian', ['id']),
     fetchAllRows('bhyt_ngoai_kiem_chuong_trinh', ['section', 'stt']),
     fetchAllRows('bhyt_ngoai_kiem_dich_vu', ['id']),
+    fetchAllRows('bhyt_pham_vi_hanh_nghe', ['id']),
   ]);
   state.lines = lines || [];
   state.trash = trash || [];
@@ -262,6 +263,7 @@ async function loadAll() {
   state.dvktList = dvktList || [];
   state.dvktTimeList = dvktTimeList || [];
   state.ngoaiKiemList = (ngoaiKiemCt || []).map((ct) => ({ ...ct, children: (ngoaiKiemDv || []).filter((d) => d.chuong_trinh_id === ct.id) }));
+  state.pvhnList = pvhnList || [];
   state.khoaNorm = buildKhoaNormalizer();
   state.equipKhoaNorm = buildEquipKhoaNormalizer();
   state.bacSiNorm = buildNormalizer(state.lines.map((l) => l.individual));
@@ -1860,8 +1862,9 @@ function referenceHTML() {
       <button data-ref-subtab="chuyen_de" class="px-4 py-2 font-medium ${state.refSubTab === 'chuyen_de' ? 'bg-brand-900 text-white' : 'bg-white text-slate-600'}">Chuyên đề</button>
       <button data-ref-subtab="dvkt" class="px-4 py-2 font-medium ${state.refSubTab === 'dvkt' ? 'bg-brand-900 text-white' : 'bg-white text-slate-600'}">DVKT bắt buộc mã máy</button>
       <button data-ref-subtab="dvkt_time" class="px-4 py-2 font-medium ${state.refSubTab === 'dvkt_time' ? 'bg-brand-900 text-white' : 'bg-white text-slate-600'}">Thời gian thực hiện DVKT</button>
+      <button data-ref-subtab="pvhn" class="px-4 py-2 font-medium ${state.refSubTab === 'pvhn' ? 'bg-brand-900 text-white' : 'bg-white text-slate-600'}">Phạm vi hành nghề</button>
     </div>
-    ${state.refSubTab === 'dvkt' ? referenceDvktHTML() : state.refSubTab === 'dvkt_time' ? referenceDvktTimeHTML() : referenceChuyenDeHTML()}
+    ${state.refSubTab === 'dvkt' ? referenceDvktHTML() : state.refSubTab === 'dvkt_time' ? referenceDvktTimeHTML() : state.refSubTab === 'pvhn' ? referencePvhnHTML() : referenceChuyenDeHTML()}
   `;
 }
 
@@ -1944,7 +1947,21 @@ function referenceDvktTimeHTML() {
     ${!hasSearch ? `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Nhập tên dịch vụ hoặc khoa/phòng ở ô trên để tra cứu (danh mục có ${state.dvktTimeList.length.toLocaleString('vi-VN')} dịch vụ)</div>` : `
     <div class="text-xs text-slate-400 mb-2">${rows.length}${rows.length === 200 ? '+' : ''} kết quả${rows.length === 200 ? ' (chỉ hiện 200 đầu tiên, gõ cụ thể hơn để thu hẹp)' : ''}</div>
     <div class="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
-      ${rows.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center">Không tìm thấy dịch vụ nào khớp</div>' : rows.map((d) => `
+      ${rows.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center">Không tìm thấy dịch vụ nào khớp</div>' : rows.map((d) => canEdit ? `
+        <div class="px-4 py-2.5" data-dvkttime-id="${d.id}">
+          <div class="flex items-start gap-2 flex-wrap">
+            <input data-dvkttime-field="ten_dich_vu" value="${escapeHtml(d.ten_dich_vu || '')}" class="border border-slate-200 rounded px-1.5 py-1 text-sm flex-1 min-w-[200px]" />
+            <input data-dvkttime-field="khoa_phong" value="${escapeHtml(d.khoa_phong || '')}" placeholder="Khoa/Phòng" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-36" />
+            <input data-dvkttime-field="thoi_gian_toi_thieu" inputmode="numeric" value="${d.thoi_gian_toi_thieu != null ? d.thoi_gian_toi_thieu : ''}" placeholder="Phút" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-16 text-right" />
+            <span class="text-xs text-slate-400 self-center">phút</span>
+            <button data-dvkttime-delete="${d.id}" class="text-slate-300 hover:text-red-600 shrink-0">✕</button>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap mt-1.5">
+            <input data-dvkttime-field="ghi_chu" value="${escapeHtml(d.ghi_chu || '')}" placeholder="Ghi chú" class="border border-slate-200 rounded px-1.5 py-1 text-xs flex-1 min-w-[160px]" />
+            <input data-dvkttime-field="link_text" value="${escapeHtml(d.link_text || '')}" placeholder="Chữ hiển thị link" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-40" />
+            <input data-dvkttime-field="link_url" value="${escapeHtml(d.link_url || '')}" placeholder="URL" class="border border-slate-200 rounded px-1.5 py-1 text-xs flex-1 min-w-[160px]" />
+          </div>
+        </div>` : `
         <div class="px-4 py-2.5">
           <div class="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -2128,6 +2145,57 @@ function ngoaiKiemGroupTotalHTML(list, isRisk) {
       <span class="text-sm ${isRisk ? 'text-red-700' : 'text-slate-600'}">Tổng doanh thu BH XN/năm: <b>${hasEstimate ? '≈ ' : ''}${fmtVND(tongDoanhThu)} đ</b>${hasEstimate ? ' <span class="text-xs opacity-70">(có phần ước tính)</span>' : ''}</span>
       ${pct != null ? `<span class="text-sm ${isRisk ? 'text-red-700' : 'text-slate-600'}">Tỉ lệ CP/DT: <b>${pct.toFixed(1)}%</b></span>` : ''}
     </div>
+  `;
+}
+
+function referencePvhnHTML() {
+  const canEdit = state.role === 'editor';
+  const chucDanhList = Array.from(new Set(state.pvhnList.map((r) => r.chuc_danh))).sort();
+  const q = state.pvhnSearch.trim().toLowerCase();
+  const hasSearch = q.length > 0;
+  let rows = hasSearch ? state.pvhnList.filter((r) => r.ten_ky_thuat.toLowerCase().includes(q)) : [];
+  if (state.pvhnChucDanh !== 'ALL') rows = rows.filter((r) => r.chuc_danh === state.pvhnChucDanh);
+
+  // Gộp theo đúng tên kỹ thuật (không phân biệt hoa/thường) để 1 kỹ thuật hiện đủ các chức danh được làm
+  const grouped = new Map();
+  rows.forEach((r) => {
+    const key = r.ten_ky_thuat.toLowerCase();
+    if (!grouped.has(key)) grouped.set(key, { ten: r.ten_ky_thuat, items: [] });
+    grouped.get(key).items.push(r);
+  });
+  const groupedList = Array.from(grouped.values()).slice(0, 100);
+
+  return `
+    <div class="mb-4">
+      <p class="text-sm text-slate-500 mb-3">Tra cứu phạm vi hành nghề theo Thông tư 32/2023/TT-BYT — ${state.pvhnList.length.toLocaleString('vi-VN')} dòng, ${chucDanhList.length} chức danh. Gõ tên dịch vụ để xem chức danh nào được thực hiện.</p>
+      <div class="flex flex-wrap gap-2 items-center">
+        <input id="pvhn-search" type="text" placeholder="Nhập tên dịch vụ/kỹ thuật để tra cứu..." value="${escapeHtml(state.pvhnSearch)}" class="border border-slate-300 rounded-md px-3 py-2 text-sm flex-1 min-w-[260px]" />
+        <select id="pvhn-chucdanh" class="border border-slate-300 rounded-md px-2 py-2 text-sm bg-white">
+          <option value="ALL" ${state.pvhnChucDanh === 'ALL' ? 'selected' : ''}>Tất cả chức danh</option>
+          ${chucDanhList.map((cd) => `<option value="${escapeHtml(cd)}" ${state.pvhnChucDanh === cd ? 'selected' : ''}>${escapeHtml(cd)}</option>`).join('')}
+        </select>
+        ${canEdit ? `<input type="file" id="pvhn-import-file" accept=".xlsx,.xls" class="hidden" /><button id="btn-pvhn-import" class="border border-slate-300 text-slate-700 rounded-md px-3 py-2 text-sm font-medium hover:bg-slate-50">Import Excel</button>` : ''}
+      </div>
+    </div>
+    <div id="pvhn-import-msg"></div>
+    ${!hasSearch ? `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Nhập tên dịch vụ ở ô trên để tra cứu (danh mục có ${state.pvhnList.length.toLocaleString('vi-VN')} dòng, ${chucDanhList.length} chức danh)</div>` : `
+    <div class="text-xs text-slate-400 mb-2">${groupedList.length}${groupedList.length === 100 ? '+' : ''} kỹ thuật khớp${groupedList.length === 100 ? ' (chỉ hiện 100 đầu tiên, gõ cụ thể hơn để thu hẹp)' : ''}</div>
+    <div class="space-y-2">
+      ${groupedList.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Không tìm thấy kỹ thuật nào khớp</div>' : groupedList.map((g) => `
+        <div class="bg-white border border-slate-200 rounded-lg px-4 py-3">
+          <div class="text-sm font-medium text-slate-800 mb-2">${escapeHtml(g.ten)}</div>
+          <div class="space-y-1.5">
+            ${g.items.map((it) => `
+              <div class="flex items-start gap-2 text-xs" data-pvhn-id="${it.id}">
+                <span class="font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 whitespace-nowrap">${escapeHtml(it.chuc_danh)}</span>
+                ${it.yeu_cau_trinh_do ? `<span class="font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 whitespace-nowrap">${it.yeu_cau_trinh_do === '+' ? 'Yêu cầu: kỹ thuật cấp cứu/sơ cứu cơ bản' : 'Yêu cầu: có chuyên khoa/đào tạo bổ sung'}</span>` : ''}
+                <span class="text-slate-500">${it.loai_thuc_hien ? escapeHtml(it.loai_thuc_hien) : 'Được thực hiện và/hoặc ra chỉ định (không yêu cầu thêm)'}</span>
+                ${it.chuong ? `<span class="text-slate-300 ml-auto whitespace-nowrap">${escapeHtml(it.chuong)}</span>` : ''}
+                ${canEdit ? `<button data-pvhn-delete="${it.id}" class="text-slate-300 hover:text-red-600 shrink-0">✕</button>` : ''}
+              </div>`).join('')}
+          </div>
+        </div>`).join('')}
+    </div>`}
   `;
 }
 
@@ -2711,6 +2779,47 @@ async function addNgoaiKiemChildRow(ctId) {
   if (ct) { if (!ct.children) ct.children = []; ct.children.push(data); }
   renderTab();
 }
+async function handlePvhnImport(ev) {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  const msgEl = document.getElementById('pvhn-import-msg');
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    const rows = raw.map((r) => ({
+      chuc_danh: String(r['chuc_danh'] || '').trim(),
+      chuong: String(r['chuong'] || '').trim(),
+      stt: String(r['stt'] || '').trim(),
+      ma_tt4321: String(r['ma_tt4321'] || '').trim(),
+      ten_ky_thuat: String(r['ten_ky_thuat'] || '').trim(),
+      yeu_cau_trinh_do: String(r['yeu_cau_trinh_do'] || '').trim(),
+      loai_thuc_hien: String(r['loai_thuc_hien'] || '').trim(),
+    })).filter((r) => r.chuc_danh && r.ten_ky_thuat);
+
+    if (rows.length === 0) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không đọc được dòng nào hợp lệ.</div>`; return; }
+    const CHUNK = 500;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const { error } = await sb.from('bhyt_pham_vi_hanh_nghe').insert(rows.slice(i, i + CHUNK));
+      if (error) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Lỗi khi ghi: ${escapeHtml(error.message)}</div>`; return; }
+    }
+    await loadAll();
+    msgEl.innerHTML = `<div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-3 py-2 text-sm mb-3">Đã thêm ${rows.length} dòng.</div>`;
+    renderTab();
+  } catch (err) {
+    msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không đọc được file: ${escapeHtml(err.message || String(err))}</div>`;
+  } finally {
+    ev.target.value = '';
+    setTimeout(() => { msgEl.innerHTML = ''; }, 8000);
+  }
+}
+async function deletePvhnRow(id) {
+  if (!confirm('Xoá dòng này?')) return;
+  const { error } = await sb.from('bhyt_pham_vi_hanh_nghe').delete().eq('id', Number(id));
+  if (error) { alert('Lỗi khi xoá: ' + error.message); return; }
+  state.pvhnList = state.pvhnList.filter((r) => r.id !== Number(id));
+  renderTab();
+}
 async function handleNgoaiKiemImport(ev) {
   const file = ev.target.files?.[0];
   if (!file) return;
@@ -2774,6 +2883,20 @@ async function handleNgoaiKiemImport(ev) {
     ev.target.value = '';
     setTimeout(() => { msgEl.innerHTML = ''; }, 8000);
   }
+}
+async function saveDvktTimeField(id, field, value) {
+  const patch = { [field]: (field === 'thoi_gian_toi_thieu') ? (value.trim() === '' ? null : Number(value)) : value };
+  const { error } = await sb.from('bhyt_dvkt_thoigian').update(patch).eq('id', Number(id));
+  if (error) { alert('Lỗi khi lưu: ' + error.message); return; }
+  const row = state.dvktTimeList.find((d) => String(d.id) === String(id));
+  if (row) Object.assign(row, patch);
+}
+async function deleteDvktTimeRow(id) {
+  if (!confirm('Xoá dịch vụ này khỏi danh mục?')) return;
+  const { error } = await sb.from('bhyt_dvkt_thoigian').delete().eq('id', Number(id));
+  if (error) { alert('Lỗi khi xoá: ' + error.message); return; }
+  state.dvktTimeList = state.dvktTimeList.filter((d) => String(d.id) !== String(id));
+  renderTab();
 }
 async function handleDvktTimeImport(ev) {
   const file = ev.target.files?.[0];
@@ -3028,6 +3151,19 @@ function attachTabEvents() {
   }
   if (state.tab === 'reference') {
     document.querySelectorAll('[data-ref-subtab]').forEach((btn) => { btn.onclick = () => { state.refSubTab = btn.dataset.refSubtab; renderTab(); }; });
+    const pvhnSearchEl = document.getElementById('pvhn-search');
+    if (pvhnSearchEl) {
+      pvhnSearchEl.addEventListener('input', (e) => { state.pvhnSearch = e.target.value; renderTab(); });
+      const val = pvhnSearchEl.value;
+      if (state._focusedBeforeRender === 'pvhn-search') { pvhnSearchEl.focus(); pvhnSearchEl.value = ''; pvhnSearchEl.value = val; }
+    }
+    const pvhnChucDanhEl = document.getElementById('pvhn-chucdanh');
+    if (pvhnChucDanhEl) pvhnChucDanhEl.onchange = (e) => { state.pvhnChucDanh = e.target.value; renderTab(); };
+    const pvhnImportBtn = document.getElementById('btn-pvhn-import');
+    if (pvhnImportBtn) pvhnImportBtn.onclick = () => document.getElementById('pvhn-import-file').click();
+    const pvhnImportFile = document.getElementById('pvhn-import-file');
+    if (pvhnImportFile) pvhnImportFile.addEventListener('change', handlePvhnImport);
+    document.querySelectorAll('[data-pvhn-delete]').forEach((btn) => { btn.onclick = () => deletePvhnRow(btn.dataset.pvhnDelete); });
     const dvktTimeSearchEl = document.getElementById('dvkt-time-search');
     if (dvktTimeSearchEl) {
       dvktTimeSearchEl.addEventListener('input', (e) => { state.dvktTimeSearch = e.target.value; renderTab(); });
@@ -3038,6 +3174,10 @@ function attachTabEvents() {
     if (dvktTimeImportBtn) dvktTimeImportBtn.onclick = () => document.getElementById('dvkt-time-import-file').click();
     const dvktTimeImportFile = document.getElementById('dvkt-time-import-file');
     if (dvktTimeImportFile) dvktTimeImportFile.addEventListener('change', handleDvktTimeImport);
+    document.querySelectorAll('[data-dvkttime-id]').forEach((row) => {
+      row.querySelectorAll('[data-dvkttime-field]').forEach((input) => input.addEventListener('change', () => saveDvktTimeField(row.dataset.dvkttimeId, input.dataset.dvkttimeField, input.value)));
+    });
+    document.querySelectorAll('[data-dvkttime-delete]').forEach((btn) => { btn.onclick = () => deleteDvktTimeRow(btn.dataset.dvkttimeDelete); });
     const dvktSearchEl = document.getElementById('dvkt-search');
     if (dvktSearchEl) {
       dvktSearchEl.addEventListener('input', (e) => { state.dvktSearch = e.target.value; renderTab(); });
