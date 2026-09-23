@@ -121,7 +121,7 @@ function buildNormalizer(values) {
 
 let state = {
   user: null, role: 'viewer',
-  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', ngoaiKiemList: [], ngoaiKiemExpanded: new Set(), ngoaiKiemEditingId: null, ngoaiKiemAdding: false, ngoaiKiemSearch: '', pvhnList: [], pvhnSearch: '', pvhnChucDanh: 'ALL',
+  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', dvktTimeEditingId: null, ngoaiKiemList: [], ngoaiKiemExpanded: new Set(), ngoaiKiemEditingId: null, ngoaiKiemAdding: false, ngoaiKiemSearch: '', pvhnList: [], pvhnSearch: '', pvhnChucDanh: 'ALL',
   tab: 'overview',
   dashKiFrom: 'ALL', dashKiTo: 'ALL', paretoScope: 'filtered',
   compareFromA: 'ALL', compareToA: 'ALL', compareFromB: 'ALL', compareToB: 'ALL', compareDimension: 'nhom',
@@ -1947,20 +1947,20 @@ function referenceDvktTimeHTML() {
     ${!hasSearch ? `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Nhập tên dịch vụ hoặc khoa/phòng ở ô trên để tra cứu (danh mục có ${state.dvktTimeList.length.toLocaleString('vi-VN')} dịch vụ)</div>` : `
     <div class="text-xs text-slate-400 mb-2">${rows.length}${rows.length === 200 ? '+' : ''} kết quả${rows.length === 200 ? ' (chỉ hiện 200 đầu tiên, gõ cụ thể hơn để thu hẹp)' : ''}</div>
     <div class="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
-      ${rows.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center">Không tìm thấy dịch vụ nào khớp</div>' : rows.map((d) => canEdit ? `
-        <div class="px-4 py-2.5" data-dvkttime-id="${d.id}">
+      ${rows.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center">Không tìm thấy dịch vụ nào khớp</div>' : rows.map((d) => (canEdit && state.dvktTimeEditingId === d.id) ? `
+        <div class="px-4 py-2.5 bg-brand-50/40" data-dvkttime-id="${d.id}">
           <div class="flex items-start gap-2 flex-wrap">
             <input data-dvkttime-field="ten_dich_vu" value="${escapeHtml(d.ten_dich_vu || '')}" class="border border-slate-200 rounded px-1.5 py-1 text-sm flex-1 min-w-[200px]" />
             <input data-dvkttime-field="khoa_phong" value="${escapeHtml(d.khoa_phong || '')}" placeholder="Khoa/Phòng" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-36" />
             <input data-dvkttime-field="thoi_gian_toi_thieu" inputmode="numeric" value="${d.thoi_gian_toi_thieu != null ? d.thoi_gian_toi_thieu : ''}" placeholder="Phút" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-16 text-right" />
             <span class="text-xs text-slate-400 self-center">phút</span>
-            <button data-dvkttime-delete="${d.id}" class="text-slate-300 hover:text-red-600 shrink-0">✕</button>
           </div>
           <div class="flex items-center gap-2 flex-wrap mt-1.5">
             <input data-dvkttime-field="ghi_chu" value="${escapeHtml(d.ghi_chu || '')}" placeholder="Ghi chú" class="border border-slate-200 rounded px-1.5 py-1 text-xs flex-1 min-w-[160px]" />
             <input data-dvkttime-field="link_text" value="${escapeHtml(d.link_text || '')}" placeholder="Chữ hiển thị link" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-40" />
             <input data-dvkttime-field="link_url" value="${escapeHtml(d.link_url || '')}" placeholder="URL" class="border border-slate-200 rounded px-1.5 py-1 text-xs flex-1 min-w-[160px]" />
           </div>
+          <div class="mt-1.5"><button data-dvkttime-done="1" class="text-xs text-brand-700 hover:underline">Xong</button></div>
         </div>` : `
         <div class="px-4 py-2.5">
           <div class="flex items-start justify-between gap-3 flex-wrap">
@@ -1971,6 +1971,7 @@ function referenceDvktTimeHTML() {
             ${d.thoi_gian_toi_thieu != null ? `<span class="text-xs font-medium rounded px-1.5 py-0.5 bg-brand-50 text-brand-700 border border-brand-200 whitespace-nowrap">${d.thoi_gian_toi_thieu} phút</span>` : ''}
           </div>
           ${d.ghi_chu || d.link_url ? `<div class="text-xs text-slate-500 mt-1">${d.ghi_chu ? escapeHtml(d.ghi_chu) : ''}${d.ghi_chu && d.link_url ? ' — ' : ''}${d.link_url ? `<a href="${escapeHtml(d.link_url)}" target="_blank" rel="noopener" class="text-brand-700 hover:underline">${escapeHtml(d.link_text || 'Xem văn bản')}</a>` : ''}</div>` : ''}
+          ${canEdit ? `<div class="flex gap-3 mt-1"><button data-dvkttime-edit="${d.id}" class="text-xs text-brand-700 hover:underline">Sửa</button><button data-dvkttime-delete="${d.id}" class="text-xs text-red-600 hover:underline">Xoá</button></div>` : ''}
         </div>`).join('')}
     </div>`}
   `;
@@ -2188,8 +2189,8 @@ function referencePvhnHTML() {
             ${g.items.map((it) => `
               <div class="flex items-start gap-2 text-xs" data-pvhn-id="${it.id}">
                 <span class="font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 whitespace-nowrap">${escapeHtml(it.chuc_danh)}</span>
-                ${it.yeu_cau_trinh_do ? `<span class="font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 whitespace-nowrap">${it.yeu_cau_trinh_do === '+' ? 'Yêu cầu: kỹ thuật cấp cứu/sơ cứu cơ bản' : 'Yêu cầu: có chuyên khoa/đào tạo bổ sung'}</span>` : ''}
-                <span class="text-slate-500">${it.loai_thuc_hien ? escapeHtml(it.loai_thuc_hien) : 'Được thực hiện và/hoặc ra chỉ định (không yêu cầu thêm)'}</span>
+                ${it.yeu_cau_trinh_do && (it.chuc_danh === 'Điều dưỡng đa khoa' || it.chuc_danh === 'Hộ sinh') ? `<span class="font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 whitespace-nowrap">${it.yeu_cau_trinh_do === '+' ? 'Yêu cầu: kỹ thuật cấp cứu/sơ cứu cơ bản' : 'Yêu cầu: có chuyên khoa/đào tạo bổ sung'}</span>` : ''}
+                ${it.loai_thuc_hien ? `<span class="text-slate-500">${escapeHtml(it.loai_thuc_hien)}</span>` : ''}
                 ${it.chuong ? `<span class="text-slate-300 ml-auto whitespace-nowrap">${escapeHtml(it.chuong)}</span>` : ''}
                 ${canEdit ? `<button data-pvhn-delete="${it.id}" class="text-slate-300 hover:text-red-600 shrink-0">✕</button>` : ''}
               </div>`).join('')}
@@ -3178,6 +3179,8 @@ function attachTabEvents() {
       row.querySelectorAll('[data-dvkttime-field]').forEach((input) => input.addEventListener('change', () => saveDvktTimeField(row.dataset.dvkttimeId, input.dataset.dvkttimeField, input.value)));
     });
     document.querySelectorAll('[data-dvkttime-delete]').forEach((btn) => { btn.onclick = () => deleteDvktTimeRow(btn.dataset.dvkttimeDelete); });
+    document.querySelectorAll('[data-dvkttime-edit]').forEach((btn) => { btn.onclick = () => { state.dvktTimeEditingId = Number(btn.dataset.dvkttimeEdit); renderTab(); }; });
+    document.querySelectorAll('[data-dvkttime-done]').forEach((btn) => { btn.onclick = () => { state.dvktTimeEditingId = null; renderTab(); }; });
     const dvktSearchEl = document.getElementById('dvkt-search');
     if (dvktSearchEl) {
       dvktSearchEl.addEventListener('input', (e) => { state.dvktSearch = e.target.value; renderTab(); });
