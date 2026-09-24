@@ -1937,7 +1937,8 @@ function referenceDvktTimeHTML() {
 
   return `
     <div class="mb-4">
-      <p class="text-sm text-slate-500 mb-3">Danh mục ${state.dvktTimeList.length.toLocaleString('vi-VN')} dịch vụ — tra cứu <b>thời gian tối thiểu thực hiện</b> theo Khoa/Phòng, kèm căn cứ/link quyết định liên quan.</p>
+      <p class="text-sm text-slate-500 mb-3">Danh mục ${state.dvktTimeList.length.toLocaleString('vi-VN')} dịch vụ — tra cứu <b>thời gian tối thiểu/tối đa thực hiện</b> theo Khoa/Phòng, kèm căn cứ/link quyết định liên quan.</p>
+      ${canEdit ? '<p class="text-xs text-slate-400 mb-3">Import Excel sẽ <b>thay thế toàn bộ</b> danh mục hiện có. Thứ tự cột cần đúng: ID Nhóm cha, Tên Nhóm cha, ID, Tên dịch vụ, Khoa/Phòng, Thời gian Min, Thời gian Max, Ghi Chú, Link.</p>' : ''}
       <div class="flex flex-wrap gap-2 items-center">
         <input id="dvkt-time-search" type="text" placeholder="Nhập tên dịch vụ hoặc khoa/phòng để tra cứu..." value="${escapeHtml(state.dvktTimeSearch)}" class="border border-slate-300 rounded-md px-3 py-2 text-sm flex-1 min-w-[280px]" />
         ${canEdit ? `<input type="file" id="dvkt-time-import-file" accept=".xlsx,.xls" class="hidden" /><button id="btn-dvkt-time-import" class="border border-slate-300 text-slate-700 rounded-md px-3 py-2 text-sm font-medium hover:bg-slate-50">Import Excel</button>` : ''}
@@ -1952,7 +1953,9 @@ function referenceDvktTimeHTML() {
           <div class="flex items-start gap-2 flex-wrap">
             <input data-dvkttime-field="ten_dich_vu" value="${escapeHtml(d.ten_dich_vu || '')}" class="border border-slate-200 rounded px-1.5 py-1 text-sm flex-1 min-w-[200px]" />
             <input data-dvkttime-field="khoa_phong" value="${escapeHtml(d.khoa_phong || '')}" placeholder="Khoa/Phòng" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-36" />
-            <input data-dvkttime-field="thoi_gian_toi_thieu" inputmode="numeric" value="${d.thoi_gian_toi_thieu != null ? d.thoi_gian_toi_thieu : ''}" placeholder="Phút" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-16 text-right" />
+            <input data-dvkttime-field="thoi_gian_min" inputmode="numeric" value="${d.thoi_gian_min != null ? d.thoi_gian_min : ''}" placeholder="Min" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-16 text-right" />
+            <span class="text-xs text-slate-400 self-center">–</span>
+            <input data-dvkttime-field="thoi_gian_max" inputmode="numeric" value="${d.thoi_gian_max != null ? d.thoi_gian_max : ''}" placeholder="Max" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-16 text-right" />
             <span class="text-xs text-slate-400 self-center">phút</span>
           </div>
           <div class="flex items-center gap-2 flex-wrap mt-1.5">
@@ -1968,7 +1971,7 @@ function referenceDvktTimeHTML() {
               <span class="text-sm font-medium text-slate-800">${escapeHtml(d.ten_dich_vu || '')}</span>
               <span class="text-xs text-slate-400 ml-2">${escapeHtml(d.khoa_phong || '')}</span>
             </div>
-            ${d.thoi_gian_toi_thieu != null ? `<span class="text-xs font-medium rounded px-1.5 py-0.5 bg-brand-50 text-brand-700 border border-brand-200 whitespace-nowrap">${d.thoi_gian_toi_thieu} phút</span>` : ''}
+            ${(d.thoi_gian_min != null || d.thoi_gian_max != null) ? `<span class="text-xs font-medium rounded px-1.5 py-0.5 bg-brand-50 text-brand-700 border border-brand-200 whitespace-nowrap">${d.thoi_gian_min != null && d.thoi_gian_max != null ? `${d.thoi_gian_min}–${d.thoi_gian_max}` : (d.thoi_gian_min != null ? d.thoi_gian_min : d.thoi_gian_max)} phút</span>` : ''}
           </div>
           ${d.ghi_chu || d.link_url ? `<div class="text-xs text-slate-500 mt-1">${d.ghi_chu ? escapeHtml(d.ghi_chu) : ''}${d.ghi_chu && d.link_url ? ' — ' : ''}${d.link_url ? `<a href="${escapeHtml(d.link_url)}" target="_blank" rel="noopener" class="text-brand-700 hover:underline">${escapeHtml(d.link_text || 'Xem văn bản')}</a>` : ''}</div>` : ''}
           ${canEdit ? `<div class="flex gap-3 mt-1"><button data-dvkttime-edit="${d.id}" class="text-xs text-brand-700 hover:underline">Sửa</button><button data-dvkttime-delete="${d.id}" class="text-xs text-red-600 hover:underline">Xoá</button></div>` : ''}
@@ -2886,7 +2889,7 @@ async function handleNgoaiKiemImport(ev) {
   }
 }
 async function saveDvktTimeField(id, field, value) {
-  const patch = { [field]: (field === 'thoi_gian_toi_thieu') ? (value.trim() === '' ? null : Number(value)) : value };
+  const patch = { [field]: (field === 'thoi_gian_min' || field === 'thoi_gian_max') ? (value.trim() === '' ? null : Number(value)) : value };
   const { error } = await sb.from('bhyt_dvkt_thoigian').update(patch).eq('id', Number(id));
   if (error) { alert('Lỗi khi lưu: ' + error.message); return; }
   const row = state.dvktTimeList.find((d) => String(d.id) === String(id));
@@ -2903,6 +2906,7 @@ async function handleDvktTimeImport(ev) {
   const file = ev.target.files?.[0];
   if (!file) return;
   const msgEl = document.getElementById('dvkt-time-import-msg');
+  if (!confirm(`File này sẽ THAY THẾ TOÀN BỘ ${state.dvktTimeList.length} dòng hiện có bằng dữ liệu mới trong file — không phải cộng dồn. Chắc chắn tiếp tục?`)) { ev.target.value = ''; return; }
   try {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array' });
@@ -2911,27 +2915,30 @@ async function handleDvktTimeImport(ev) {
     if (!ws || !ws['!ref']) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không tìm thấy sheet dữ liệu.</div>`; return; }
     const range = XLSX.utils.decode_range(ws['!ref']);
     const rows = [];
-    // Cột (0-indexed): 0=ID Nhóm cha, 1=Tên Nhóm cha, 2=ID, 3=Tên dịch vụ, 4=Khoa/Phòng, 5=Thời gian tối thiểu, 6=Ghi Chú, 7=Link
+    // Cột (0-indexed): 0=ID Nhóm cha, 1=Tên Nhóm cha, 2=ID, 3=Tên dịch vụ, 4=Khoa/Phòng, 5=Thời gian Min, 6=Thời gian Max, 7=Ghi Chú, 8=Link
     for (let r = 1; r <= range.e.r; r++) {
       const get = (c) => ws[XLSX.utils.encode_cell({ r, c })];
       const tenDichVuCell = get(3);
       if (!tenDichVuCell || tenDichVuCell.v === undefined || tenDichVuCell.v === '') continue;
-      const linkCell = get(7);
-      const thoiGianRaw = get(5) ? get(5).v : null;
-      const thoiGianNum = Number(thoiGianRaw);
+      const linkCell = get(8);
+      const toNum = (cell) => { const n = Number(cell ? cell.v : null); return (cell === undefined || cell.v === '' || cell.v == null || isNaN(n)) ? null : n; };
       rows.push({
         id_nhom_cha: (() => { const n = Number(get(0) ? get(0).v : null); return isNaN(n) ? null : n; })(),
         ten_nhom_cha: String((get(1) && get(1).v) || '').trim(),
         dvkt_id: String((get(2) && get(2).v) || '').trim(),
         ten_dich_vu: String(tenDichVuCell.v || '').trim(),
         khoa_phong: String((get(4) && get(4).v) || '').trim(),
-        thoi_gian_toi_thieu: (thoiGianRaw === null || thoiGianRaw === '' || isNaN(thoiGianNum)) ? null : thoiGianNum,
-        ghi_chu: String((get(6) && get(6).v) || '').trim(),
+        thoi_gian_min: toNum(get(5)),
+        thoi_gian_max: toNum(get(6)),
+        ghi_chu: String((get(7) && get(7).v) || '').trim(),
         link_text: String((linkCell && linkCell.v) || '').trim(),
         link_url: (linkCell && linkCell.l && linkCell.l.Target) ? linkCell.l.Target : '',
       });
     }
     if (rows.length === 0) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không đọc được dòng nào hợp lệ.</div>`; return; }
+    // Xoá hết dữ liệu cũ trước khi nhập lại (thay thế toàn bộ, không cộng dồn)
+    const { error: delError } = await sb.from('bhyt_dvkt_thoigian').delete().gte('id', 0);
+    if (delError) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Lỗi khi xoá dữ liệu cũ: ${escapeHtml(delError.message)}</div>`; return; }
     const CHUNK = 500;
     for (let i = 0; i < rows.length; i += CHUNK) {
       const { error } = await sb.from('bhyt_dvkt_thoigian').insert(rows.slice(i, i + CHUNK));
@@ -2939,7 +2946,7 @@ async function handleDvktTimeImport(ev) {
     }
     await loadAll();
     const withLink = rows.filter((r) => r.link_url).length;
-    msgEl.innerHTML = `<div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-3 py-2 text-sm mb-3">Đã thêm ${rows.length} dòng (${withLink} dòng có link).</div>`;
+    msgEl.innerHTML = `<div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-3 py-2 text-sm mb-3">Đã thay thế bằng ${rows.length} dòng mới (${withLink} dòng có link).</div>`;
     renderTab();
   } catch (err) {
     msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không đọc được file: ${escapeHtml(err.message || String(err))}</div>`;
