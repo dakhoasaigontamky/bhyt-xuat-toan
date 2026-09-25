@@ -121,7 +121,7 @@ function buildNormalizer(values) {
 
 let state = {
   user: null, role: 'viewer',
-  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', dvktTimeEditingId: null, ngoaiKiemList: [], ngoaiKiemExpanded: new Set(), ngoaiKiemEditingId: null, ngoaiKiemAdding: false, ngoaiKiemSearch: '', pvhnList: [], pvhnSearch: '', pvhnChucDanh: 'ALL',
+  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', dvktTimeEditingId: null, ngoaiKiemList: [], ngoaiKiemExpanded: new Set(), ngoaiKiemEditingId: null, ngoaiKiemAdding: false, ngoaiKiemSearch: '', pvhnList: [], pvhnSearch: '', pvhnChucDanh: 'ALL', dvktLoaded: false, dvktLoading: false, dvktTimeLoaded: false, dvktTimeLoading: false, pvhnLoaded: false, pvhnLoading: false,
   tab: 'overview',
   dashKiFrom: 'ALL', dashKiTo: 'ALL', paretoScope: 'filtered',
   compareFromA: 'ALL', compareToA: 'ALL', compareFromB: 'ALL', compareToB: 'ALL', compareDimension: 'nhom',
@@ -237,7 +237,7 @@ async function fetchAllRows(table, orderCols, filterFn) {
 }
 
 async function loadAll() {
-  const [lines, trash, pers, cats, refs, aliases, khoaAliases, equipment, dvktList, dvktTimeList, ngoaiKiemCt, ngoaiKiemDv, pvhnList] = await Promise.all([
+  const [lines, trash, pers, cats, refs, aliases, khoaAliases, equipment, ngoaiKiemCt, ngoaiKiemDv] = await Promise.all([
     fetchAllRows('bhyt_lines', null, (q) => q.is('deleted_at', null)),
     fetchAllRows('bhyt_lines', ['deleted_at'], (q) => q.not('deleted_at', 'is', null)),
     fetchAllRows('bhyt_periods', ['year', 'quarter']),
@@ -246,11 +246,8 @@ async function loadAll() {
     fetchAllRows('bhyt_code_aliases', ['alias_code']),
     fetchAllRows('bhyt_khoa_aliases', ['alias_name']),
     fetchAllRows('bhyt_equipment', ['stt']),
-    fetchAllRows('bhyt_dvkt_required_machine', ['stt']),
-    fetchAllRows('bhyt_dvkt_thoigian', ['id']),
     fetchAllRows('bhyt_ngoai_kiem_chuong_trinh', ['section', 'stt']),
     fetchAllRows('bhyt_ngoai_kiem_dich_vu', ['id']),
-    fetchAllRows('bhyt_pham_vi_hanh_nghe', ['id']),
   ]);
   state.lines = lines || [];
   state.trash = trash || [];
@@ -260,14 +257,32 @@ async function loadAll() {
   state.codeAliases = aliases || [];
   state.khoaAliases = khoaAliases || [];
   state.equipment = equipment || [];
-  state.dvktList = dvktList || [];
-  state.dvktTimeList = dvktTimeList || [];
   state.ngoaiKiemList = (ngoaiKiemCt || []).map((ct) => ({ ...ct, children: (ngoaiKiemDv || []).filter((d) => d.chuong_trinh_id === ct.id) }));
-  state.pvhnList = pvhnList || [];
   state.khoaNorm = buildKhoaNormalizer();
   state.equipKhoaNorm = buildEquipKhoaNormalizer();
   state.bacSiNorm = buildNormalizer(state.lines.map((l) => l.individual));
   state.remediatorNorm = buildNormalizer(state.lines.map((l) => l.remediator));
+}
+// 3 danh mục tham khảo lớn (DVKT bắt buộc mã máy, Thời gian DVKT, Phạm vi hành nghề) không tải sẵn lúc
+// đăng nhập nữa (gộp lại hơn 13.000 dòng, làm chậm lúc mở app dù người dùng không đụng tới) — chỉ tải
+// đúng lúc người dùng bấm vào đúng mục con đó lần đầu, các lần sau dùng lại dữ liệu đã tải.
+async function ensureDvktLoaded() {
+  if (state.dvktLoaded || state.dvktLoading) return;
+  state.dvktLoading = true; renderTab();
+  state.dvktList = (await fetchAllRows('bhyt_dvkt_required_machine', ['stt'])) || [];
+  state.dvktLoaded = true; state.dvktLoading = false; renderTab();
+}
+async function ensureDvktTimeLoaded() {
+  if (state.dvktTimeLoaded || state.dvktTimeLoading) return;
+  state.dvktTimeLoading = true; renderTab();
+  state.dvktTimeList = (await fetchAllRows('bhyt_dvkt_thoigian', ['id'])) || [];
+  state.dvktTimeLoaded = true; state.dvktTimeLoading = false; renderTab();
+}
+async function ensurePvhnLoaded() {
+  if (state.pvhnLoaded || state.pvhnLoading) return;
+  state.pvhnLoading = true; renderTab();
+  state.pvhnList = (await fetchAllRows('bhyt_pham_vi_hanh_nghe', ['id'])) || [];
+  state.pvhnLoaded = true; state.pvhnLoading = false; renderTab();
 }
 // Quy 1 tên Khoa về đúng tên chuẩn đã khai báo trong Ánh xạ tên Khoa (nếu có), giữ nguyên nếu chưa khai báo
 function resolveKhoaAlias(name) {
@@ -712,7 +727,12 @@ function renderTab() {
   if (state.tab === 'compare') content = compareHTML();
   if (state.tab === 'setup') content = setupHTML();
   if (state.tab === 'trash') content = trashHTML();
-  if (state.tab === 'reference') content = referenceHTML();
+  if (state.tab === 'reference') {
+    content = referenceHTML();
+    if (state.refSubTab === 'dvkt') ensureDvktLoaded();
+    if (state.refSubTab === 'dvkt_time') ensureDvktTimeLoaded();
+    if (state.refSubTab === 'pvhn') ensurePvhnLoaded();
+  }
   if (state.tab === 'ngoaikiem') content = ngoaiKiemTabHTML();
   if (state.tab === 'equipment') content = equipmentHTML();
   if (state.tab === 'guide') content = guideHTML();
@@ -1621,7 +1641,10 @@ function compareHTML() {
   const deltaRate = (A.rate !== null && B.rate !== null) ? (B.rate - A.rate) * 100 : null;
 
   return `
-    <p class="text-sm text-slate-500 mb-4">So sánh tỉ lệ &amp; chi phí xuất toán giữa 2 giai đoạn tuỳ chọn, theo Nhóm lỗi / Chuyên đề / Khoa.</p>
+    <div class="flex items-start justify-between gap-3 mb-4 flex-wrap">
+      <p class="text-sm text-slate-500">So sánh tỉ lệ &amp; chi phí xuất toán giữa 2 giai đoạn tuỳ chọn, theo Nhóm lỗi / Chuyên đề / Khoa.</p>
+      <button id="btn-export-compare" class="border border-brand-600 text-brand-700 rounded-md px-3 py-2 text-sm font-medium hover:bg-brand-50 shrink-0">📄 Xuất báo cáo Excel</button>
+    </div>
     <div class="grid md:grid-cols-2 gap-4 mb-4">
       <div class="bg-white border border-slate-200 rounded-lg p-4">
         <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Giai đoạn A</div>
@@ -1903,6 +1926,7 @@ function referenceChuyenDeHTML() {
 }
 
 function referenceDvktHTML() {
+  if (state.dvktLoading) return '<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Đang tải danh mục...</div>';
   const canEdit = state.role === 'editor';
   const q = state.dvktSearch.trim().toLowerCase();
   const hasSearch = q.length > 0;
@@ -1930,6 +1954,7 @@ function referenceDvktHTML() {
 }
 
 function referenceDvktTimeHTML() {
+  if (state.dvktTimeLoading) return '<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Đang tải danh mục...</div>';
   const canEdit = state.role === 'editor';
   const q = state.dvktTimeSearch.trim().toLowerCase();
   const hasSearch = q.length > 0;
@@ -2153,6 +2178,7 @@ function ngoaiKiemGroupTotalHTML(list, isRisk) {
 }
 
 function referencePvhnHTML() {
+  if (state.pvhnLoading) return '<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Đang tải danh mục...</div>';
   const canEdit = state.role === 'editor';
   const chucDanhList = Array.from(new Set(state.pvhnList.map((r) => r.chuc_danh))).sort();
   const q = state.pvhnSearch.trim().toLowerCase();
@@ -2703,7 +2729,8 @@ async function handleDvktImport(ev) {
       const { error } = await sb.from('bhyt_dvkt_required_machine').insert(rows.slice(i, i + CHUNK));
       if (error) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Lỗi khi ghi: ${escapeHtml(error.message)}</div>`; return; }
     }
-    await loadAll();
+    state.dvktList = (await fetchAllRows('bhyt_dvkt_required_machine', ['stt'])) || [];
+    state.dvktLoaded = true;
     msgEl.innerHTML = `<div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-3 py-2 text-sm mb-3">Đã thêm ${rows.length} dòng.</div>`;
     renderTab();
   } catch (err) {
@@ -2807,7 +2834,8 @@ async function handlePvhnImport(ev) {
       const { error } = await sb.from('bhyt_pham_vi_hanh_nghe').insert(rows.slice(i, i + CHUNK));
       if (error) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Lỗi khi ghi: ${escapeHtml(error.message)}</div>`; return; }
     }
-    await loadAll();
+    state.pvhnList = (await fetchAllRows('bhyt_pham_vi_hanh_nghe', ['id'])) || [];
+    state.pvhnLoaded = true;
     msgEl.innerHTML = `<div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-3 py-2 text-sm mb-3">Đã thêm ${rows.length} dòng.</div>`;
     renderTab();
   } catch (err) {
@@ -2944,7 +2972,8 @@ async function handleDvktTimeImport(ev) {
       const { error } = await sb.from('bhyt_dvkt_thoigian').insert(rows.slice(i, i + CHUNK));
       if (error) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Lỗi khi ghi: ${escapeHtml(error.message)}</div>`; return; }
     }
-    await loadAll();
+    state.dvktTimeList = (await fetchAllRows('bhyt_dvkt_thoigian', ['id'])) || [];
+    state.dvktTimeLoaded = true;
     const withLink = rows.filter((r) => r.link_url).length;
     msgEl.innerHTML = `<div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-3 py-2 text-sm mb-3">Đã thay thế bằng ${rows.length} dòng mới (${withLink} dòng có link).</div>`;
     renderTab();
@@ -3127,6 +3156,8 @@ function attachTabEvents() {
     bindRange('cmp-a-from', 'compareFromA'); bindRange('cmp-a-to', 'compareToA');
     bindRange('cmp-b-from', 'compareFromB'); bindRange('cmp-b-to', 'compareToB');
     document.querySelectorAll('[data-cmp-dim]').forEach((btn) => { btn.onclick = () => { state.compareDimension = btn.dataset.cmpDim; renderTab(); }; });
+    const exportCmpBtn = document.getElementById('btn-export-compare');
+    if (exportCmpBtn) exportCmpBtn.onclick = handleExportCompareReport;
   }
   if (state.tab === 'setup') {
     const addPeriodBtn = document.getElementById('btn-add-period');
@@ -3158,7 +3189,12 @@ function attachTabEvents() {
     if (emptyBtn) emptyBtn.onclick = emptyOldTrash;
   }
   if (state.tab === 'reference') {
-    document.querySelectorAll('[data-ref-subtab]').forEach((btn) => { btn.onclick = () => { state.refSubTab = btn.dataset.refSubtab; renderTab(); }; });
+    document.querySelectorAll('[data-ref-subtab]').forEach((btn) => { btn.onclick = () => {
+      state.refSubTab = btn.dataset.refSubtab; renderTab();
+      if (state.refSubTab === 'dvkt') ensureDvktLoaded();
+      if (state.refSubTab === 'dvkt_time') ensureDvktTimeLoaded();
+      if (state.refSubTab === 'pvhn') ensurePvhnLoaded();
+    }; });
     const pvhnSearchEl = document.getElementById('pvhn-search');
     if (pvhnSearchEl) {
       pvhnSearchEl.addEventListener('input', (e) => { state.pvhnSearch = e.target.value; renderTab(); });
@@ -3676,6 +3712,35 @@ async function handleImport(e) {
   }
 }
 
+function handleExportCompareReport() {
+  const A = rangeSummary(state.compareFromA, state.compareToA);
+  const B = rangeSummary(state.compareFromB, state.compareToB);
+  const rows = compareBreakdown(A.rows, A.totalCost, B.rows, B.totalCost, state.compareDimension);
+  const dimLabel = { nhom: 'Nhóm lỗi', chuyende: 'Chuyên đề', khoa: 'Khoa' }[state.compareDimension];
+  const labelA = compareRangeLabel(state.compareFromA, state.compareToA, A.periodLabels);
+  const labelB = compareRangeLabel(state.compareFromB, state.compareToB, B.periodLabels);
+  const deltaRate = (A.rate !== null && B.rate !== null) ? (B.rate - A.rate) * 100 : null;
+
+  const wb = XLSX.utils.book_new();
+  const overviewSheet = XLSX.utils.json_to_sheet([
+    { 'Chỉ tiêu': 'Khoảng thời gian', 'Giai đoạn A': labelA, 'Giai đoạn B': labelB },
+    { 'Chỉ tiêu': 'Số kì', 'Giai đoạn A': A.periodCount, 'Giai đoạn B': B.periodCount },
+    { 'Chỉ tiêu': 'Tổng chi phí xuất toán (đ)', 'Giai đoạn A': A.totalCost, 'Giai đoạn B': B.totalCost },
+    { 'Chỉ tiêu': 'Trung bình chi phí/kì (đ)', 'Giai đoạn A': Math.round(A.avgCostPerPeriod), 'Giai đoạn B': Math.round(B.avgCostPerPeriod) },
+    { 'Chỉ tiêu': 'Tỉ lệ xuất toán/doanh thu', 'Giai đoạn A': A.rate !== null ? (A.rate * 100).toFixed(2) + '%' : '—', 'Giai đoạn B': B.rate !== null ? (B.rate * 100).toFixed(2) + '%' : '—' },
+    { 'Chỉ tiêu': 'Chênh lệch tỉ lệ (B so với A, điểm %)', 'Giai đoạn A': '', 'Giai đoạn B': deltaRate !== null ? (deltaRate > 0 ? '+' : '') + deltaRate.toFixed(2) : '—' },
+  ], { skipHeader: false });
+  XLSX.utils.book_append_sheet(wb, overviewSheet, 'Tổng quan');
+
+  const detailSheet = XLSX.utils.json_to_sheet(rows.map((r) => ({
+    [dimLabel]: r.label,
+    'Chi phí Giai đoạn A (đ)': r.costA, '% trong GĐ A': r.pctA.toFixed(1) + '%',
+    'Chi phí Giai đoạn B (đ)': r.costB, '% trong GĐ B': r.pctB.toFixed(1) + '%',
+    'Chênh lệch (đ)': r.delta,
+  })));
+  XLSX.utils.book_append_sheet(wb, detailSheet, `Chi tiết theo ${dimLabel}`.slice(0, 31));
+  XLSX.writeFile(wb, `So_sanh_giai_doan_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
 function handleExport() {
   const wb = XLSX.utils.book_new();
   const lineSheet = XLSX.utils.json_to_sheet(state.lines.map((l) => ({
