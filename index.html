@@ -471,9 +471,12 @@ function currentPeriodAlerts() {
   const { current, all, idx } = currentAndPreviousPeriod();
   if (!current) return null;
   const priorKeys = new Set(all.slice(0, idx).map((q) => q.key));
-  const priorCodes = new Set(state.lines.filter((l) => priorKeys.has(qKey(l.quarter, l.year))).map((l) => l.code));
+  // Quy mọi mã về mã chuẩn theo "Ánh xạ mã chuyên đề" — hai mã đã ánh xạ với nhau được xem là MỘT chuyên đề
+  const aliasMap = new Map(state.codeAliases.map((a) => [String(a.alias_code || '').trim(), String(a.canonical_code || '').trim()]));
+  const canon = (c) => { const k = String(c || '').trim(); return aliasMap.get(k) || k; };
+  const priorCodes = new Set(state.lines.filter((l) => priorKeys.has(qKey(l.quarter, l.year))).map((l) => canon(l.code)));
   const currentRows = state.lines.filter((l) => qKey(l.quarter, l.year) === current.key);
-  const currentCodes = Array.from(new Set(currentRows.map((l) => l.code)));
+  const currentCodes = Array.from(new Set(currentRows.map((l) => canon(l.code))));
   const newCodes = currentCodes.filter((c) => !priorCodes.has(c)).map((c) => ({ code: c, name: categoryNameOf(c) }));
   const repeatedCodes = currentCodes.filter((c) => priorCodes.has(c)).map((c) => ({ code: c, name: categoryNameOf(c) }));
   const causeCounts = {};
