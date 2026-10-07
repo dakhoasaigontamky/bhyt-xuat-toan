@@ -711,6 +711,79 @@ function navItem(id, label, icon) {
   </button>`;
 }
 
+
+// ---------------------------------------------------------------
+// NÚT "LƯU BIỂU ĐỒ" (ảnh PNG nét) — tự gắn vào góc trên bên phải của mọi biểu đồ
+// ---------------------------------------------------------------
+function decorateChartSaveButtons() {
+  document.querySelectorAll('#tab-content canvas').forEach((cv) => {
+    const box = cv.parentElement;
+    if (!box || box.querySelector(':scope > .chart-save-btn')) return;
+    if (getComputedStyle(box).position === 'static') box.style.position = 'relative';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chart-save-btn';
+    b.title = 'Lưu biểu đồ thành ảnh';
+    b.textContent = '⬇ Lưu ảnh';
+    b.setAttribute('style', 'position:absolute;top:0;right:0;z-index:5;font-size:11px;line-height:1;padding:4px 7px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(255,255,255,.9);color:#475569;cursor:pointer;opacity:.65;');
+    b.onmouseenter = () => { b.style.opacity = '1'; b.style.color = '#009247'; b.style.borderColor = '#009247'; };
+    b.onmouseleave = () => { b.style.opacity = '.65'; b.style.color = '#475569'; b.style.borderColor = '#cbd5e1'; };
+    b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); saveChartImage(cv); };
+    box.appendChild(b);
+  });
+}
+function saveChartImage(cv) {
+  const chart = window.Chart && Chart.getChart(cv);
+  if (!chart) { alert('Biểu đồ chưa sẵn sàng, thử lại sau giây lát.'); return; }
+  const SCALE = 3;
+  const card = cv.closest('.bg-white');
+  const h3 = card && card.querySelector('h3');
+  const title = h3 ? h3.textContent.trim() : '';
+  const origDpr = chart.options.devicePixelRatio;
+  const origAnim = chart.options.animation;
+  let src;
+  try {
+    chart.options.animation = false;
+    chart.options.devicePixelRatio = SCALE;
+    chart.resize();
+    chart.render();
+    src = document.createElement('canvas');
+    src.width = cv.width; src.height = cv.height;
+    const sctx = src.getContext('2d');
+    sctx.fillStyle = '#ffffff'; sctx.fillRect(0, 0, src.width, src.height);
+    sctx.drawImage(cv, 0, 0);
+  } finally {
+    chart.options.devicePixelRatio = origDpr;
+    chart.options.animation = origAnim;
+    chart.resize();
+    chart.render();
+  }
+  const pad = 20 * SCALE, titleH = title ? 34 * SCALE : 0;
+  const out = document.createElement('canvas');
+  out.width = src.width + pad * 2; out.height = src.height + pad * 2 + titleH;
+  const o = out.getContext('2d');
+  o.fillStyle = '#ffffff'; o.fillRect(0, 0, out.width, out.height);
+  if (title) {
+    o.fillStyle = '#0f172a'; o.font = `bold ${15 * SCALE}px "iCiel Graphit", Arial, sans-serif`; o.textBaseline = 'top';
+    o.fillText(title, pad, pad, out.width - pad * 2);
+  }
+  o.drawImage(src, pad, pad + titleH);
+  const d = new Date();
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const name = ((title || cv.id || 'bieu-do').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 80) + ' ' + stamp + '.png';
+  out.toBlob((blob) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, 'image/png');
+}
+(function watchChartsForSaveButtons() {
+  let pending = false;
+  const run = () => { pending = false; decorateChartSaveButtons(); };
+  new MutationObserver(() => { if (!pending) { pending = true; requestAnimationFrame(run); } }).observe(document.body, { childList: true, subtree: true });
+})();
+
 function renderTab() {
   invalidateQuarterListCache();
   const el = document.getElementById('tab-content');
@@ -765,8 +838,45 @@ function simpleTable(headers, rows) {
     <tbody>${rows.map((r) => `<tr class="border-b border-slate-100">${r.map((c) => `<td class="py-1.5">${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 
+
+function openAlertModal(kind) {
+  const d = (window._alertLists || {})[kind];
+  if (!d) return;
+  closeAlertModal();
+  const ov = document.createElement('div');
+  ov.id = 'alert-modal';
+  ov.setAttribute('style', 'position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;');
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:720px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.3);">
+    <div style="padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+      <div><div style="font-weight:700;color:${d.color};font-size:16px;">${d.title} (${d.list.length})</div><div style="font-size:12px;color:#64748b;margin-top:2px;">${escapeHtml(d.sub)}</div></div>
+      <button id="alert-modal-close" style="font-size:22px;line-height:1;color:#64748b;border:0;background:none;cursor:pointer;">×</button>
+    </div>
+    <div style="padding:10px 20px 0;"><input id="alert-modal-search" placeholder="Tìm mã / tên chuyên đề..." style="width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:7px 10px;font-size:14px;"></div>
+    <div id="alert-modal-body" style="padding:10px 20px 16px;overflow:auto;font-size:14px;"></div>
+  </div>`;
+  document.body.appendChild(ov);
+  const body = ov.querySelector('#alert-modal-body');
+  const draw = (term) => {
+    const t = (term || '').trim().toLowerCase();
+    const rows = d.list.filter((c) => !t || c.code.toLowerCase().includes(t) || (c.name || '').toLowerCase().includes(t));
+    body.innerHTML = rows.length ? `<table style="width:100%;border-collapse:collapse;">${rows.map((c, i) => `<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:6px 8px 6px 0;color:#94a3b8;width:32px;">${i + 1}</td><td style="padding:6px 10px 6px 0;font-family:monospace;font-size:12px;white-space:nowrap;vertical-align:top;">${escapeHtml(c.code)}</td><td style="padding:6px 0;">${escapeHtml(c.name || '')}</td></tr>`).join('')}</table>` : '<div style="color:#94a3b8;text-align:center;padding:20px;">Không tìm thấy</div>';
+  };
+  draw('');
+  ov.querySelector('#alert-modal-search').addEventListener('input', (e) => draw(e.target.value));
+  ov.querySelector('#alert-modal-close').onclick = closeAlertModal;
+  ov.addEventListener('click', (e) => { if (e.target === ov) closeAlertModal(); });
+  document.addEventListener('keydown', _alertModalEsc);
+}
+function _alertModalEsc(e) { if (e.key === 'Escape') closeAlertModal(); }
+function closeAlertModal() {
+  const m = document.getElementById('alert-modal');
+  if (m) m.remove();
+  document.removeEventListener('keydown', _alertModalEsc);
+}
+
 function alertsHTML(alerts) {
   const { current, newCodes, repeatedCodes, causeCounts, totalRows } = alerts;
+  window._alertLists = { new: { title: 'Chuyên đề MỚI', sub: 'Chưa từng xuất hiện ở bất kỳ quý nào trước ' + current.label, list: newCodes, color: '#b45309' }, rep: { title: 'Chuyên đề LẶP LẠI', sub: 'Đã từng xuất hiện ở các quý trước ' + current.label, list: repeatedCodes, color: '#b91c1c' } };
   const causeEntries = Object.entries(causeCounts).sort((a, b) => b[1] - a[1]);
   return `
     <div class="grid md:grid-cols-3 gap-4 mb-4">
@@ -775,7 +885,7 @@ function alertsHTML(alerts) {
         ${newCodes.length === 0 ? '<div class="text-sm text-slate-500">Không có chuyên đề mới</div>' : `
           <ul class="text-sm text-amber-900 space-y-1">
             ${newCodes.slice(0, 6).map((c) => `<li>• <span class="font-mono text-xs">${escapeHtml(c.code)}</span>${c.name ? ' — ' + escapeHtml(c.name) : ''}</li>`).join('')}
-            ${newCodes.length > 6 ? `<li class="text-xs text-amber-600">+ ${newCodes.length - 6} chuyên đề khác</li>` : ''}
+            ${newCodes.length > 6 ? `<li class="text-xs text-amber-600"><a href="#" onclick="openAlertModal('new');return false;" style="text-decoration:underline;font-weight:600;">+ ${newCodes.length - 6} chuyên đề khác — bấm để xem tất cả (${newCodes.length})</a></li>` : `<li class="text-xs text-amber-600"><a href="#" onclick="openAlertModal('new');return false;" style="text-decoration:underline;">Xem chi tiết</a></li>`}
           </ul>`}
       </div>
       <div class="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -783,7 +893,7 @@ function alertsHTML(alerts) {
         ${repeatedCodes.length === 0 ? '<div class="text-sm text-slate-500">Không có chuyên đề lặp lại</div>' : `
           <ul class="text-sm text-red-900 space-y-1">
             ${repeatedCodes.slice(0, 6).map((c) => `<li>• <span class="font-mono text-xs">${escapeHtml(c.code)}</span>${c.name ? ' — ' + escapeHtml(c.name) : ''}</li>`).join('')}
-            ${repeatedCodes.length > 6 ? `<li class="text-xs text-red-600">+ ${repeatedCodes.length - 6} chuyên đề khác</li>` : ''}
+            ${repeatedCodes.length > 6 ? `<li class="text-xs text-red-600"><a href="#" onclick="openAlertModal('rep');return false;" style="text-decoration:underline;font-weight:600;">+ ${repeatedCodes.length - 6} chuyên đề khác — bấm để xem tất cả (${repeatedCodes.length})</a></li>` : `<li class="text-xs text-red-600"><a href="#" onclick="openAlertModal('rep');return false;" style="text-decoration:underline;">Xem chi tiết</a></li>`}
           </ul>`}
       </div>
       <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
