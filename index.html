@@ -2305,47 +2305,56 @@ function referenceDvktTimeHTML() {
   const canEdit = state.role === 'editor';
   const q = state.dvktTimeSearch.trim().toLowerCase();
   const hasSearch = q.length > 0;
-  const rows = hasSearch ? state.dvktTimeList.filter((d) => [d.ten_dich_vu, d.khoa_phong, d.ten_nhom_cha, d.dvkt_id].some((f) => (f || '').toLowerCase().includes(q))).slice(0, 200) : [];
+  const total = state.dvktTimeList.length;
+  const showAll = !hasSearch && total <= 150; // danh mục nhỏ thì hiện luôn, lớn thì phải tìm
+  const sortStt = (x, y) => (x.stt == null ? 1e9 : x.stt) - (y.stt == null ? 1e9 : y.stt) || x.id - y.id;
+  const rows = (hasSearch
+    ? state.dvktTimeList.filter((d) => [d.ten_dich_vu, d.ten_quyet_dinh, d.ghi_chu, d.stt].some((f) => String(f == null ? '' : f).toLowerCase().includes(q)))
+    : (showAll ? state.dvktTimeList.slice() : [])).sort(sortStt).slice(0, 200);
+  const inp = 'border border-slate-200 rounded px-1.5 py-1 text-xs';
 
   return `
     <div class="mb-4">
-      <p class="text-sm text-slate-500 mb-3">Danh mục ${state.dvktTimeList.length.toLocaleString('vi-VN')} dịch vụ — tra cứu <b>thời gian tối thiểu/tối đa thực hiện</b> theo Khoa/Phòng, kèm căn cứ/link quyết định liên quan.</p>
-      ${canEdit ? '<p class="text-xs text-slate-400 mb-3">Import Excel sẽ <b>thay thế toàn bộ</b> danh mục hiện có. Thứ tự cột cần đúng: ID Nhóm cha, Tên Nhóm cha, ID, Tên dịch vụ, Khoa/Phòng, Thời gian Min, Thời gian Max, Ghi Chú, Link.</p>' : ''}
+      <p class="text-sm text-slate-500 mb-3">Danh mục ${total.toLocaleString('vi-VN')} quy trình kỹ thuật (QTKT) — tra cứu <b>thời gian thực hiện tối thiểu/tối đa</b>, ghi chú, quyết định ban hành và link truy cập QTKT.</p>
+      ${canEdit ? '<p class="text-xs text-slate-400 mb-3">Import Excel sẽ <b>thay thế toàn bộ</b> danh mục hiện có. Thứ tự cột cần đúng: STT, Tên QTKT, Thời gian Min, Thời gian Max, Ghi chú, Tên Quyết định ban hành, Link truy cập QTKT.</p>' : ''}
       <div class="flex flex-wrap gap-2 items-center">
-        <input id="dvkt-time-search" type="text" placeholder="Nhập tên dịch vụ hoặc khoa/phòng để tra cứu..." value="${escapeHtml(state.dvktTimeSearch)}" class="border border-slate-300 rounded-md px-3 py-2 text-sm flex-1 min-w-[280px]" />
+        <input id="dvkt-time-search" type="text" placeholder="Nhập tên QTKT, quyết định ban hành hoặc ghi chú để tra cứu..." value="${escapeHtml(state.dvktTimeSearch)}" class="border border-slate-300 rounded-md px-3 py-2 text-sm flex-1 min-w-[280px]" />
         ${canEdit ? `<input type="file" id="dvkt-time-import-file" accept=".xlsx,.xls" class="hidden" /><button id="btn-dvkt-time-import" class="border border-slate-300 text-slate-700 rounded-md px-3 py-2 text-sm font-medium hover:bg-slate-50">Import Excel</button>` : ''}
       </div>
     </div>
     <div id="dvkt-time-import-msg"></div>
-    ${!hasSearch ? `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Nhập tên dịch vụ hoặc khoa/phòng ở ô trên để tra cứu (danh mục có ${state.dvktTimeList.length.toLocaleString('vi-VN')} dịch vụ)</div>` : `
+    ${(!hasSearch && !showAll) ? `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Nhập tên QTKT ở ô trên để tra cứu (danh mục có ${total.toLocaleString('vi-VN')} QTKT)</div>` : `
     <div class="text-xs text-slate-400 mb-2">${rows.length}${rows.length === 200 ? '+' : ''} kết quả${rows.length === 200 ? ' (chỉ hiện 200 đầu tiên, gõ cụ thể hơn để thu hẹp)' : ''}</div>
     <div class="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
-      ${rows.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center">Không tìm thấy dịch vụ nào khớp</div>' : rows.map((d) => (canEdit && state.dvktTimeEditingId === d.id) ? `
+      ${rows.length === 0 ? '<div class="text-sm text-slate-400 py-10 text-center">Không tìm thấy QTKT nào khớp</div>' : rows.map((d) => (canEdit && state.dvktTimeEditingId === d.id) ? `
         <div class="px-4 py-2.5 bg-brand-50/40" data-dvkttime-id="${d.id}">
           <div class="flex items-start gap-2 flex-wrap">
-            <input data-dvkttime-field="ten_dich_vu" value="${escapeHtml(d.ten_dich_vu || '')}" class="border border-slate-200 rounded px-1.5 py-1 text-sm flex-1 min-w-[200px]" />
-            <input data-dvkttime-field="khoa_phong" value="${escapeHtml(d.khoa_phong || '')}" placeholder="Khoa/Phòng" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-36" />
-            <input data-dvkttime-field="thoi_gian_min" inputmode="numeric" value="${d.thoi_gian_min != null ? d.thoi_gian_min : ''}" placeholder="Min" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-16 text-right" />
+            <input data-dvkttime-field="stt" inputmode="numeric" value="${d.stt != null ? d.stt : ''}" placeholder="STT" class="${inp} w-14 text-right" />
+            <input data-dvkttime-field="ten_dich_vu" value="${escapeHtml(d.ten_dich_vu || '')}" placeholder="Tên QTKT" class="border border-slate-200 rounded px-1.5 py-1 text-sm flex-1 min-w-[200px]" />
+            <input data-dvkttime-field="thoi_gian_min" inputmode="numeric" value="${d.thoi_gian_min != null ? d.thoi_gian_min : ''}" placeholder="Min" class="${inp} w-16 text-right" />
             <span class="text-xs text-slate-400 self-center">–</span>
-            <input data-dvkttime-field="thoi_gian_max" inputmode="numeric" value="${d.thoi_gian_max != null ? d.thoi_gian_max : ''}" placeholder="Max" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-16 text-right" />
+            <input data-dvkttime-field="thoi_gian_max" inputmode="numeric" value="${d.thoi_gian_max != null ? d.thoi_gian_max : ''}" placeholder="Max" class="${inp} w-16 text-right" />
             <span class="text-xs text-slate-400 self-center">phút</span>
           </div>
           <div class="flex items-center gap-2 flex-wrap mt-1.5">
-            <input data-dvkttime-field="ghi_chu" value="${escapeHtml(d.ghi_chu || '')}" placeholder="Ghi chú" class="border border-slate-200 rounded px-1.5 py-1 text-xs flex-1 min-w-[160px]" />
-            <input data-dvkttime-field="link_text" value="${escapeHtml(d.link_text || '')}" placeholder="Chữ hiển thị link" class="border border-slate-200 rounded px-1.5 py-1 text-xs w-40" />
-            <input data-dvkttime-field="link_url" value="${escapeHtml(d.link_url || '')}" placeholder="URL" class="border border-slate-200 rounded px-1.5 py-1 text-xs flex-1 min-w-[160px]" />
+            <input data-dvkttime-field="ghi_chu" value="${escapeHtml(d.ghi_chu || '')}" placeholder="Ghi chú (VD: lưu kim 20 phút)" class="${inp} flex-1 min-w-[200px]" />
+            <input data-dvkttime-field="ten_quyet_dinh" value="${escapeHtml(d.ten_quyet_dinh || '')}" placeholder="Tên Quyết định ban hành" class="${inp} flex-1 min-w-[200px]" />
+          </div>
+          <div class="flex items-center gap-2 flex-wrap mt-1.5">
+            <input data-dvkttime-field="link_text" value="${escapeHtml(d.link_text || '')}" placeholder="Chữ hiển thị link" class="${inp} w-40" />
+            <input data-dvkttime-field="link_url" value="${escapeHtml(d.link_url || '')}" placeholder="Link truy cập QTKT (URL)" class="${inp} flex-1 min-w-[200px]" />
           </div>
           <div class="mt-1.5"><button data-dvkttime-done="1" class="text-xs text-brand-700 hover:underline">Xong</button></div>
         </div>` : `
         <div class="px-4 py-2.5">
           <div class="flex items-start justify-between gap-3 flex-wrap">
             <div>
-              <span class="text-sm font-medium text-slate-800">${escapeHtml(d.ten_dich_vu || '')}</span>
-              <span class="text-xs text-slate-400 ml-2">${escapeHtml(d.khoa_phong || '')}</span>
+              ${d.stt != null ? `<span class="text-xs text-slate-400 mr-2">${escapeHtml(String(d.stt))}.</span>` : ''}<span class="text-sm font-medium text-slate-800">${escapeHtml(d.ten_dich_vu || '')}</span>
             </div>
             ${(d.thoi_gian_min != null || d.thoi_gian_max != null) ? `<span class="text-xs font-medium rounded px-1.5 py-0.5 bg-brand-50 text-brand-700 border border-brand-200 whitespace-nowrap">${d.thoi_gian_min != null && d.thoi_gian_max != null ? `${d.thoi_gian_min}–${d.thoi_gian_max}` : (d.thoi_gian_min != null ? d.thoi_gian_min : d.thoi_gian_max)} phút</span>` : ''}
           </div>
-          ${d.ghi_chu || d.link_url ? `<div class="text-xs text-slate-500 mt-1">${d.ghi_chu ? escapeHtml(d.ghi_chu) : ''}${d.ghi_chu && d.link_url ? ' — ' : ''}${d.link_url ? `<a href="${escapeHtml(d.link_url)}" target="_blank" rel="noopener" class="text-brand-700 hover:underline">${escapeHtml(d.link_text || 'Xem văn bản')}</a>` : ''}</div>` : ''}
+          ${d.ghi_chu ? `<div class="text-xs text-slate-600 mt-1">📝 ${escapeHtml(d.ghi_chu)}</div>` : ''}
+          ${(d.ten_quyet_dinh || d.link_url) ? `<div class="text-xs text-slate-500 mt-1">${d.ten_quyet_dinh ? `Quyết định: ${escapeHtml(d.ten_quyet_dinh)}` : ''}${d.ten_quyet_dinh && d.link_url ? ' — ' : ''}${d.link_url ? `<a href="${escapeHtml(d.link_url)}" target="_blank" rel="noopener" class="text-brand-700 hover:underline">${escapeHtml(d.link_text || 'Xem QTKT')}</a>` : ''}</div>` : ''}
           ${canEdit ? `<div class="flex gap-3 mt-1"><button data-dvkttime-edit="${d.id}" class="text-xs text-brand-700 hover:underline">Sửa</button><button data-dvkttime-delete="${d.id}" class="text-xs text-red-600 hover:underline">Xoá</button></div>` : ''}
         </div>`).join('')}
     </div>`}
@@ -3264,14 +3273,14 @@ async function handleNgoaiKiemImport(ev) {
   }
 }
 async function saveDvktTimeField(id, field, value) {
-  const patch = { [field]: (field === 'thoi_gian_min' || field === 'thoi_gian_max') ? (value.trim() === '' ? null : Number(value)) : value };
+  const patch = { [field]: (field === 'thoi_gian_min' || field === 'thoi_gian_max' || field === 'stt') ? (value.trim() === '' || isNaN(Number(value)) ? null : Number(value)) : value };
   const { error } = await sb.from('bhyt_dvkt_thoigian').update(patch).eq('id', Number(id));
   if (error) { alert('Lỗi khi lưu: ' + error.message); return; }
   const row = state.dvktTimeList.find((d) => String(d.id) === String(id));
   if (row) Object.assign(row, patch);
 }
 async function deleteDvktTimeRow(id) {
-  if (!confirm('Xoá dịch vụ này khỏi danh mục?')) return;
+  if (!confirm('Xoá QTKT này khỏi danh mục?')) return;
   const { error } = await sb.from('bhyt_dvkt_thoigian').delete().eq('id', Number(id));
   if (error) { alert('Lỗi khi xoá: ' + error.message); return; }
   state.dvktTimeList = state.dvktTimeList.filter((d) => String(d.id) !== String(id));
@@ -3290,24 +3299,25 @@ async function handleDvktTimeImport(ev) {
     if (!ws || !ws['!ref']) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không tìm thấy sheet dữ liệu.</div>`; return; }
     const range = XLSX.utils.decode_range(ws['!ref']);
     const rows = [];
-    // Cột (0-indexed): 0=ID Nhóm cha, 1=Tên Nhóm cha, 2=ID, 3=Tên dịch vụ, 4=Khoa/Phòng, 5=Thời gian Min, 6=Thời gian Max, 7=Ghi Chú, 8=Link
+    // Cột (0-indexed): 0=STT, 1=Tên QTKT, 2=Thời gian Min, 3=Thời gian Max, 4=Ghi chú, 5=Tên Quyết định ban hành, 6=Link truy cập QTKT
     for (let r = 1; r <= range.e.r; r++) {
       const get = (c) => ws[XLSX.utils.encode_cell({ r, c })];
-      const tenDichVuCell = get(3);
-      if (!tenDichVuCell || tenDichVuCell.v === undefined || tenDichVuCell.v === '') continue;
-      const linkCell = get(8);
-      const toNum = (cell) => { const n = Number(cell ? cell.v : null); return (cell === undefined || cell.v === '' || cell.v == null || isNaN(n)) ? null : n; };
+      const nameCell = get(1);
+      if (!nameCell || nameCell.v === undefined || String(nameCell.v).trim() === '') continue;
+      const linkCell = get(6);
+      const toNum = (cell) => { if (!cell || cell.v === '' || cell.v == null) return null; const n = Number(String(cell.v).replace(',', '.')); return isNaN(n) ? null : n; };
+      const linkText = String((linkCell && linkCell.v) || '').trim();
+      let linkUrl = (linkCell && linkCell.l && linkCell.l.Target) ? linkCell.l.Target : '';
+      if (!linkUrl && /^https?:\/\//i.test(linkText)) linkUrl = linkText; // ô chỉ dán sẵn đường dẫn, không gắn hyperlink
       rows.push({
-        id_nhom_cha: (() => { const n = Number(get(0) ? get(0).v : null); return isNaN(n) ? null : n; })(),
-        ten_nhom_cha: String((get(1) && get(1).v) || '').trim(),
-        dvkt_id: String((get(2) && get(2).v) || '').trim(),
-        ten_dich_vu: String(tenDichVuCell.v || '').trim(),
-        khoa_phong: String((get(4) && get(4).v) || '').trim(),
-        thoi_gian_min: toNum(get(5)),
-        thoi_gian_max: toNum(get(6)),
-        ghi_chu: String((get(7) && get(7).v) || '').trim(),
-        link_text: String((linkCell && linkCell.v) || '').trim(),
-        link_url: (linkCell && linkCell.l && linkCell.l.Target) ? linkCell.l.Target : '',
+        stt: toNum(get(0)),
+        ten_dich_vu: String(nameCell.v || '').trim(),
+        thoi_gian_min: toNum(get(2)),
+        thoi_gian_max: toNum(get(3)),
+        ghi_chu: String((get(4) && get(4).v) || '').trim(),
+        ten_quyet_dinh: String((get(5) && get(5).v) || '').trim(),
+        link_text: (linkUrl && linkText === linkUrl) ? 'Xem QTKT' : linkText,
+        link_url: linkUrl,
       });
     }
     if (rows.length === 0) { msgEl.innerHTML = `<div class="bg-red-50 text-red-700 border border-red-200 rounded-md px-3 py-2 text-sm mb-3">Không đọc được dòng nào hợp lệ.</div>`; return; }
