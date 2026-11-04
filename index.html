@@ -2685,7 +2685,7 @@ function ksHoiChanHTML() {
   const d = ksS(), hc = ksRows('hoi_chan'), pd = ksRows('phac_do');
   if (!hc.length && !pd.length) return `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Chưa có danh sách hội chẩn / chỉ định chưa đúng tháng ${d.month}/${d.year}.</div>`;
   const luot = hc.reduce((a, r) => a + (parseFloat(ksDu(r, 'so_luot')) || 0), 0);
-  const coBb = hc.filter((r) => /^có/i.test(ksDu(r, 'bb_hc')));
+  const coBb = hc.filter((r) => /^(có|đạt)/i.test(ksDu(r, 'bb_hc')) && !/chưa/i.test(ksDu(r, 'ghi_chu').slice(0, 12)));
   const kpis = [
     dlsKpi('HSBA dùng KS hội chẩn', dlsNF.format(hc.length), 'Trong tháng ' + d.month, 'neutral'),
     dlsKpi('Lượt chỉ định KS hội chẩn', dlsNF.format(luot), 'Tổng số lượt', 'neutral'),
@@ -2741,7 +2741,7 @@ function ksDddHTML() {
 const KS_SHEETS = { 'QLKS Phác đồ': { loai: 'phac_do', map: [['ma_hsba', /^mã tiếp nhận/], ['tuoi', /^tuổi$/], ['gioi', /^giới tính$/], ['icd', /^icd chính/], ['khoa', /^khoa$/], ['khang_sinh', /^tên kháng sinh/], ['so_luot', /^số lượt chỉ định/], ['so_luong', /^số lượng$/], ['lieu', /^liều dùng/], ['ly_do', /^lý do không đạt/], ['ghi_chu', /^ghi chú/]] },
   'QLKS Hội chẩn': { loai: 'hoi_chan', map: [['ngay', /^ngày$/], ['khoa', /^khoa$/], ['ma_hsba', /^mã ba$/], ['chan_doan', /^chẩn đoán/], ['thuoc', /^tên thuốc/], ['bb_hc', /^biên bản/], ['so_luot', /^số lượt chỉ định/], ['ghi_chu', /^ghi chú/]] },
   'QLKS Dự phòng': { loai: 'du_phong', map: [['khoa', /^khoa$/], ['ma_hsba', /^mã hsba$/], ['chan_doan', /^chẩn đoán/], ['gioi', /^giới tính$/], ['tuoi', /^tuổi$/], ['ten_pt', /^tên phẫu thuật/], ['ngay', /^ngày pt/], ['phan_loai', /^phân loại phẫu thuật/], ['khang_sinh', /^kháng sinh$/], ['muc_dich', /^mục đích/], ['chuyen_doi', /^chuyển đổi ks dự phòng/], ['ghi_chu', /^ghi chú/]] },
-  'QLKS Chuyển đổi': { loai: 'chuyen_doi', map: [['loai_bn', /^loại bệnh nhân/], ['ma_hsba', /^mã tiếp nhận/], ['icd', /^icd chính/], ['khoa', /^khoa$/], ['ngay', /^ngày tạo/], ['tuoi', /^tuổi$/], ['gioi', /^giới tính$/], ['so_benh_kem', /^số bệnh mắc kèm/], ['benh_kem', /^bệnh mắc kèm/], ['gan', /^chức năng gan/], ['loc_cau_than', /^độ lọc/], ['wbc', /^wbc$/], ['neu', /^neu$/], ['crp', /^crp/], ['loai_nk', /^loại nhiễm khuẩn/], ['cay', /^cấy bệnh phẩm/], ['nhom_ks', /^nhóm kháng sinh/], ['thoa_dk', /^thỏa điều kiện/], ['hinh_thuc', /^hình thức/], ['hop_ly', /^tính hợp/], ['ngay_ks_tiem', /^số ngày sử dụng ks/], ['nam_vien', /^thời gian nằm viện/], ['tai_kham', /^tái khám/], ['dung_ks', /^dùng ks/]] } };
+  'QLKS Chuyển đổi': { loai: 'chuyen_doi', map: [['loai_bn', /^loại bệnh nhân/], ['ma_hsba', /^mã tiếp nhận/], ['icd', /^icd chính/], ['khoa', /^khoa$/], ['ngay', /^ngày tạo/], ['tuoi', /^tuổi$/], ['gioi', /^giới tính$/], ['so_benh_kem', /^số bệnh mắc kèm/], ['benh_kem', /^bệnh mắc kèm/], ['gan', /^chức năng gan/], ['loc_cau_than', /^độ lọc/], ['wbc', /^wbc$/], ['neu', /^neu$/], ['crp', /^crp/], ['loai_nk', /^loại nhiễm khuẩn/], ['cay', /^cấy bệnh phẩm/], ['nhom_ks', /^nhóm kháng sinh/], ['thoa_dk', /^th[oỏ][aả] điều kiện/], ['hinh_thuc', /^hình thức/], ['hop_ly', /^tính hợp/], ['ngay_ks_tiem', /^số ngày sử dụng ks/], ['nam_vien', /^thời gian nằm viện/], ['tai_kham', /^tái khám/], ['dung_ks', /^dùng ks/]] } };
 function ksNorm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().toLowerCase(); }
 function ksDate(v) {
   if (v == null || v === '') return null;
@@ -2755,6 +2755,42 @@ function ksNum(x) {
   const s = String(x).trim(), m = s.match(/^(-?\d+(?:[.,]\d+)?)\s*(%?)$/);
   if (!m) return null;
   let v = parseFloat(m[1].replace(',', '.')); if (m[2]) v /= 100; return v;
+}
+function ksClamp(ws) {
+  let mr = 0, mc = 0;
+  for (const k in ws) { if (k[0] === '!') continue; const a = XLSX.utils.decode_cell(k); if (a.r > mr) mr = a.r; if (a.c > mc) mc = a.c; }
+  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: mr, c: mc } });
+  return ws;
+}
+function ksClassify(name) {
+  const n = ksNorm(name);
+  let m = n.match(/^ddd\s*t(\d{1,2})\.(\d{2,4})$/);
+  if (m) return { type: 'ddd', thang: +m[1], nam: +m[2] < 100 ? 2000 + +m[2] : +m[2] };
+  if (/dự phòng/.test(n)) return { type: 'detail', cfg: KS_SHEETS['QLKS Dự phòng'] };
+  if (/hội chẩn/.test(n)) return { type: 'detail', cfg: KS_SHEETS['QLKS Hội chẩn'] };
+  if (/chuyển đổi/.test(n)) return { type: 'detail', cfg: KS_SHEETS['QLKS Chuyển đổi'] };
+  if (/phác đồ/.test(n)) return { type: 'detail', cfg: KS_SHEETS['QLKS Phác đồ'] };
+  if (/báo cáo|tk_qlsd/.test(n)) return { type: 'report' };
+  return null;
+}
+function ksParseWorkbook(wb) {
+  let rep = null, repScore = -1, detailEnd = null; const hsba = [], ddd = [], skipped = [];
+  const hidden = (wb.Workbook && wb.Workbook.Sheets) || [];
+  wb.SheetNames.forEach((name, idx) => {
+    const ws = wb.Sheets[name]; if (!ws || !ws['!ref']) return;
+    const c = ksClassify(name); if (!c) return;
+    ksClamp(ws);
+    if (c.type === 'report') {
+      const r = ksParseReport(ws); if (!r || !r.items.length) return;
+      const score = r.items.reduce((a, it) => a + Object.keys(it.vals).length, 0) + ((hidden[idx] && hidden[idx].Hidden) ? 0 : 1000);
+      if (score > repScore) { rep = r; repScore = score; }
+    } else if (c.type === 'detail') {
+      const r = ksParseDetail(ws, c.cfg); if (r.end && !detailEnd) detailEnd = r.end;
+      r.rows.forEach((x) => { x._end = r.end; hsba.push(x); });
+      skipped.push(name + ': ' + r.rows.length);
+    } else { const rows = ksParseDdd(ws, c.nam, c.thang); ddd.push(...rows); skipped.push(name + ': ' + rows.length); }
+  });
+  return { rep, hsba, ddd, detailEnd, log: skipped };
 }
 function ksParseReport(ws) {
   const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
@@ -2779,7 +2815,7 @@ function ksParseReport(ws) {
 function ksParseDetail(ws, cfg) {
   const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
   let end = null;
-  for (let r = 0; r < Math.min(3, aoa.length) && !end; r++) (aoa[r] || []).forEach((c) => { const m = c && String(c).match(/đến ngày\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i); if (m && !end) end = { y: +m[3], m: +m[2] }; });
+  for (let r = 0; r < Math.min(3, aoa.length) && !end; r++) (aoa[r] || []).forEach((c) => { const m = c && String(c).match(/đến\s*(?:ngày\s*)?(\d{1,2})\/(\d{1,2})\/(\d{4})/i); if (m && !end) end = { y: +m[3], m: +m[2] }; });
   const hi = aoa.findIndex((row) => row && row.some((c) => /^(mã tiếp nhận|mã ba|mã hsba)$/.test(ksNorm(c))));
   if (hi < 0) return { end, rows: [] };
   const head = aoa[hi].map(ksNorm), keys = head.map(() => null), used = new Set();
@@ -2817,18 +2853,15 @@ async function handleKsImport(ev) {
   const msgEl = document.getElementById('ks-import-msg');
   const say = (ok, t) => { if (msgEl) msgEl.innerHTML = `<div class="${ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'} border rounded-md px-3 py-2 text-sm mb-3">${t}</div>`; };
   try {
-    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const buf = await file.arrayBuffer();
+    const names = XLSX.read(buf, { type: 'array', bookSheets: true }).SheetNames.filter((n) => ksClassify(n));
+    const wb = XLSX.read(buf, { type: 'array', sheets: names });
     const d = ksS();
-    let rep = null; const hsba = [], ddd = [], tags = new Map(); let detailEnd = null;
-    wb.SheetNames.forEach((name) => {
-      const ws = wb.Sheets[name]; if (!ws || !ws['!ref']) return;
-      const nm = name.trim();
-      if (/^báo cáo$/i.test(nm)) { rep = ksParseReport(ws); return; }
-      const cfg = KS_SHEETS[nm];
-      if (cfg) { const r = ksParseDetail(ws, cfg); if (r.end) detailEnd = r.end; r.rows.forEach((x) => { x._end = r.end; hsba.push(x); }); return; }
-      const dm = nm.match(/^DDD\s*T(\d{1,2})\.(\d{4})$/i);
-      if (dm) ddd.push(...ksParseDdd(ws, +dm[2], +dm[1]));
-    });
+    const { rep, hsba, ddd, detailEnd } = ksParseWorkbook(wb);
+    // Một số sheet DDD cũ ghi đơn vị (viên/gói) vào cột Hoạt chất → tra lại theo mã thuốc từ các sheet khác
+    const unitLike = /^(viên|gói|ống|lọ|chai|túi)\b/i, hcByMa = new Map();
+    [...d.ddd, ...ddd].forEach((x) => { if (x.ma_thuoc && x.hoat_chat && !unitLike.test(x.hoat_chat)) hcByMa.set(x.ma_thuoc, x.hoat_chat); });
+    ddd.forEach((x) => { if (unitLike.test(x.hoat_chat || '')) x.hoat_chat = hcByMa.get(x.ma_thuoc) || x.ten_thuoc; });
     if (!rep && !hsba.length && !ddd.length) { say(false, 'Không nhận ra sheet nào (cần sheet "Báo cáo", "QLKS Phác đồ/Hội chẩn/Dự phòng/Chuyển đổi", "DDD T9.2026"...).'); return; }
     // Báo cáo
     const year = (rep && rep.year) || (detailEnd && detailEnd.y) || d.year || new Date().getFullYear();
