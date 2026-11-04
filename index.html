@@ -705,7 +705,7 @@ function render() {
           ${isRestricted ? '' : navItem('heatmap', 'Tra cứu theo khoa/cá nhân', '🗺️')}
           ${isRestricted ? '' : navItem('equipment', 'Tra cứu trang thiết bị BHYT', '🖥️')}
           ${isHod ? '' : navItem('ngoaikiem', 'Tra cứu xét nghiệm', '🧪')}
-          ${navItem('thuoc', 'Tra cứu thuốc', '💊')}
+          ${navItem('thuoc', 'Tra cứu Dược', '💊')}
           ${navItem('risk', 'Risk Score', '🚦')}
           ${navItem('compare', 'So sánh giai đoạn', '⚖️')}
           ${navItem('reference', 'Thư viện tra cứu tham khảo', '🔎')}
@@ -1887,7 +1887,7 @@ function drawCompareChart() {
 // ---------------------------------------------------------------
 function thuocSubtabs() { const a = [{ id: 'chong_chi_dinh', label: 'Chống chỉ định' }]; if (canSeeDls()) a.push({ id: 'dls', label: 'Báo cáo dược lâm sàng' }); return a; }
 // ---------------------------------------------------------------
-// BÁO CÁO DƯỢC LÂM SÀNG (mục con của tab "Tra cứu thuốc")
+// BÁO CÁO DƯỢC LÂM SÀNG (mục con của tab "Tra cứu Dược")
 // Xem được: editor, khoaduoc_xn (Khoa Dược/XN), bgd (Ban giám đốc). Chỉ editor import.
 // Dữ liệu: bhyt_dls_chi_so (7 sheet báo cáo tháng, dạng "chỉ số × tháng") + bhyt_dls_hsba (bảng kiểm HSBA, KHÔNG lưu tên người bệnh)
 // ---------------------------------------------------------------
@@ -4032,14 +4032,14 @@ function guideHTML() {
         '<b>Risk Score</b>: điểm rủi ro từng chuyên đề trong 1 kỳ, kèm đèn giao thông 🔴🟡🟢.',
         '<b>Thư viện tra cứu tham khảo</b>: gồm 3 mục — Chuyên đề (cơ sở pháp lý/thanh toán/quy tắc giám định), DVKT bắt buộc mã máy, và Thời gian thực hiện DVKT.',
         '<b>Tra cứu xét nghiệm</b>: danh mục chương trình Ngoại kiểm (đã/chưa tham gia), chi phí và doanh thu liên quan, cảnh báo nguy cơ xuất toán.',
-        '<b>Tra cứu thuốc</b>: tra cứu chống chỉ định của một số thuốc được hưởng BHYT — mọi vai trò đều xem được, chỉ Editor được thêm/sửa/xoá/import.',
+        '<b>Tra cứu Dược</b>: tra cứu chống chỉ định của một số thuốc được hưởng BHYT — mọi vai trò đều xem được, chỉ Editor được thêm/sửa/xoá/import.',
         '<b>Kỳ & Danh mục</b> (chỉ Editor thấy): doanh thu BHYT theo kì (quý, hoặc đợt thanh tra/kiểm toán đột xuất...), và map mã Phụ lục → Nhóm.',
       ])}
       ${guideSection('3. Vai trò', [
         '<b>Editor</b>: sửa/thêm/xoá dữ liệu, import Excel.',
         '<b>Viewer</b>: chỉ xem và export Excel.',
-        '<b>HOD</b>: chỉ xem Risk Score, So sánh giai đoạn, Thư viện tra cứu tham khảo và Tra cứu thuốc.',
-        '<b>Khoa Dược/XN</b>: chỉ xem Risk Score, So sánh giai đoạn, Thư viện tra cứu tham khảo, Tra cứu xét nghiệm và Tra cứu thuốc.',
+        '<b>HOD</b>: chỉ xem Risk Score, So sánh giai đoạn, Thư viện tra cứu tham khảo và Tra cứu Dược.',
+        '<b>Khoa Dược/XN</b>: chỉ xem Risk Score, So sánh giai đoạn, Thư viện tra cứu tham khảo, Tra cứu xét nghiệm và Tra cứu Dược.',
       ])}
     </div>`;
 }
