@@ -122,7 +122,7 @@ function buildNormalizer(values) {
 
 let state = {
   user: null, role: 'viewer',
-  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', dvktTimeEditingId: null, ngoaiKiemList: [], ngoaiKiemExpanded: new Set(), ngoaiKiemEditingId: null, ngoaiKiemAdding: false, ngoaiKiemSearch: '', pvhnList: [], pvhnSearch: '', pvhnChucDanh: 'ALL', thuocList: [], thuocLoaded: false, thuocLoading: false, thuocSubTab: 'chong_chi_dinh', dls: null, thuocSearch: '', thuocEditingId: null, thuocAdding: false, dvktLoaded: false, dvktLoading: false, dvktTimeLoaded: false, dvktTimeLoading: false, pvhnLoaded: false, pvhnLoading: false,
+  lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], equipmentSearch: '', equipmentFilterKhoa: 'ALL', equipmentFilterStatus: 'ALL', equipmentFilterDossier: 'ALL', equipExpanded: new Set(), equipAdding: false, equipEditingId: null, dvktList: [], dvktSearch: '', refSubTab: 'chuyen_de', dvktTimeList: [], dvktTimeSearch: '', dvktTimeEditingId: null, ngoaiKiemList: [], ngoaiKiemExpanded: new Set(), ngoaiKiemEditingId: null, ngoaiKiemAdding: false, ngoaiKiemSearch: '', pvhnList: [], pvhnSearch: '', pvhnChucDanh: 'ALL', thuocList: [], thuocLoaded: false, thuocLoading: false, thuocSubTab: 'chong_chi_dinh', dls: null, ks: null, thuocSearch: '', thuocEditingId: null, thuocAdding: false, dvktLoaded: false, dvktLoading: false, dvktTimeLoaded: false, dvktTimeLoading: false, pvhnLoaded: false, pvhnLoading: false,
   tab: 'overview',
   dashKiFrom: 'ALL', dashKiTo: 'ALL', paretoScope: 'filtered',
   compareFromA: 'ALL', compareToA: 'ALL', compareFromB: 'ALL', compareToB: 'ALL', compareDimension: 'nhom',
@@ -202,7 +202,7 @@ async function afterLogin(session) {
 }
 async function logout() {
   await sb.auth.signOut();
-  state = { ...state, user: null, role: 'viewer', lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], dvktList: [], dvktTimeList: [], ngoaiKiemList: [], dls: null, tab: 'overview' };
+  state = { ...state, user: null, role: 'viewer', lines: [], trash: [], periods: [], categories: [], reference: [], codeAliases: [], khoaAliases: [], equipment: [], dvktList: [], dvktTimeList: [], ngoaiKiemList: [], dls: null, ks: null, tab: 'overview' };
 }
 async function handleChangePassword() {
   const newPw = document.getElementById('pw-new').value;
@@ -854,7 +854,7 @@ function renderTab() {
     content = referenceHTML();
   }
   if (state.tab === 'ngoaikiem') content = ngoaiKiemTabHTML();
-  if (state.tab === 'thuoc') { ensureThuocLoaded(); if (state.thuocSubTab === 'dls' && canSeeDls()) ensureDlsLoaded(); content = thuocHTML(); }
+  if (state.tab === 'thuoc') { ensureThuocLoaded(); if (state.thuocSubTab === 'dls' && canSeeDls()) ensureDlsLoaded(); if (state.thuocSubTab === 'ks' && canSeeDls()) ensureKsLoaded(); content = thuocHTML(); }
   if (state.tab === 'equipment') content = equipmentHTML();
   if (state.tab === 'guide') content = guideHTML();
   el.innerHTML = banner + content;
@@ -862,7 +862,7 @@ function renderTab() {
   if (state.tab === 'overview') drawAllOverviewCharts();
   if (state.tab === 'equipment') drawEquipmentCharts();
   if (state.tab === 'compare') drawCompareChart();
-  if (state.tab === 'thuoc' && state.thuocSubTab === 'dls') drawDlsCharts();
+  if (state.tab === 'thuoc' && (state.thuocSubTab === 'dls' || state.thuocSubTab === 'ks')) drawDlsCharts();
   if (state.tab === 'ngoaikiem') drawNgoaiKiemCharts();
   if (state.tab === 'heatmap') {
     const sr = state._heatmapSearchResult;
@@ -1885,7 +1885,7 @@ function drawCompareChart() {
 // ---------------------------------------------------------------
 // TRA CỨU THUỐC TAB (mục con: Chống chỉ định) — mọi vai trò xem được, chỉ Editor sửa
 // ---------------------------------------------------------------
-function thuocSubtabs() { const a = [{ id: 'chong_chi_dinh', label: 'Chống chỉ định' }]; if (canSeeDls()) a.push({ id: 'dls', label: 'Báo cáo dược lâm sàng' }); return a; }
+function thuocSubtabs() { const a = [{ id: 'chong_chi_dinh', label: 'Chống chỉ định' }]; if (canSeeDls()) { a.push({ id: 'dls', label: 'Báo cáo dược lâm sàng' }); a.push({ id: 'ks', label: 'Quản lý sử dụng kháng sinh' }); } return a; }
 // ---------------------------------------------------------------
 // BÁO CÁO DƯỢC LÂM SÀNG (mục con của tab "Tra cứu Dược")
 // Xem được: editor, khoaduoc_xn (Khoa Dược/XN), bgd (Ban giám đốc). Chỉ editor import.
@@ -2494,6 +2494,387 @@ function attachDlsEvents() {
   const ifile = document.getElementById('dls-import-file'); if (ifile) ifile.addEventListener('change', handleDlsImport);
 }
 
+// ---------------------------------------------------------------
+// QUẢN LÝ SỬ DỤNG KHÁNG SINH (mục con của tab "Tra cứu Dược")
+// Xem: editor, khoaduoc_xn, bgd. Chỉ editor import. KHÔNG lưu tên/SĐT/địa chỉ/ngày sinh người bệnh, chỉ giữ mã HSBA.
+// Bảng: bhyt_ks_chi_so (8 chỉ số × tháng), bhyt_ks_hsba (4 loại danh sách), bhyt_ks_ddd (DDD theo thuốc × tháng)
+// ---------------------------------------------------------------
+const KS_SECS = [['overview', '📊 Tổng quan'], ['cd', '🔁 Chuyển đổi tiêm → uống'], ['dp', '🛡️ KS dự phòng phẫu thuật'], ['hc', '📋 Hội chẩn & chỉ định chưa đúng'], ['ddd', '💊 DDD']];
+function ksS() {
+  if (!state.ks) state.ks = { loaded: false, loading: false, ci: [], hsba: [], ddd: [], sec: 'overview', year: null, month: null, dddCmp: 'yoy' };
+  return state.ks;
+}
+function ensureKsLoaded() {
+  const d = ksS();
+  if (d.loaded || d.loading) return;
+  d.loading = true;
+  Promise.all([fetchAllRows('bhyt_ks_chi_so', ['nam', 'thang', 'stt']), fetchAllRows('bhyt_ks_hsba', ['nam', 'thang', 'id']), fetchAllRows('bhyt_ks_ddd', ['nam', 'thang', 'id'])]).then(([a, b, c]) => {
+    d.ci = a || []; d.hsba = b || []; d.ddd = c || []; d.loaded = true; d.loading = false;
+    ksPickDefaults(true);
+    renderTab();
+  });
+}
+function ksYears() {
+  const d = ksS();
+  return Array.from(new Set([...d.ci.map((r) => r.nam), ...d.hsba.map((r) => r.nam), ...d.ddd.map((r) => r.nam)])).sort((a, b) => b - a);
+}
+function ksMonths(y) {
+  const d = ksS(), s = new Set();
+  d.ci.forEach((r) => { if (r.nam === y && r.gia_tri != null) s.add(r.thang); });
+  d.hsba.forEach((r) => { if (r.nam === y) s.add(r.thang); });
+  d.ddd.forEach((r) => { if (r.nam === y) s.add(r.thang); });
+  return Array.from(s).sort((a, b) => a - b);
+}
+function ksPickDefaults(force) {
+  const d = ksS(), ys = ksYears();
+  if (force || !d.year || !ys.includes(d.year)) d.year = ys[0] || new Date().getFullYear();
+  const ms = ksMonths(d.year);
+  if (force || !d.month || !ms.includes(d.month)) d.month = ms.length ? ms[ms.length - 1] : 1;
+}
+const ksPct = (v, dg) => (v == null ? '—' : dlsNF.format(+(v * 100).toFixed(dg == null ? 1 : dg)) + '%');
+function ksInd(y) {
+  const d = ksS(), map = new Map();
+  d.ci.filter((r) => r.nam === y).sort((a, b) => a.stt - b.stt).forEach((r) => {
+    let it = map.get(r.stt);
+    if (!it) { it = { stt: r.stt, label: r.chi_so, mt: r.muc_tieu, dir: r.muc_tieu_dir, tv: r.muc_tieu_val, cach: r.cach_do, m: {} }; map.set(r.stt, it); }
+    it.m[r.thang] = { v: r.gia_tri, nx: r.nhan_xet, gc: r.ghi_chu };
+  });
+  return Array.from(map.values());
+}
+function ksOk(it, v) {
+  if (v == null || it.tv == null || !it.dir) return null;
+  return it.dir === '>=' ? v >= it.tv - 1e-9 : v <= it.tv + 1e-9;
+}
+function ksRows(loai) { const d = ksS(); return d.hsba.filter((r) => r.loai === loai && r.nam === d.year && r.thang === d.month); }
+const ksDu = (r, k) => { const v = (r.du_lieu || {})[k]; return v == null ? '' : String(v).trim(); };
+function ksCount(rows, fn) { const m = new Map(); rows.forEach((r) => { const k = fn(r) || '(không ghi)'; m.set(k, (m.get(k) || 0) + 1); }); return Array.from(m.entries()).sort((a, b) => b[1] - a[1]); }
+const KS_TH = 'padding:4px 6px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap;';
+const KS_TD = 'padding:4px 6px;border-bottom:1px solid #f1f5f9;vertical-align:top;';
+function ksBarCard(title, pairs, color, h) {
+  if (!pairs.length) return '';
+  return dlsCard(title, dlsChartBox({ type: 'bar', data: { labels: pairs.map((p) => (p[0].length > 40 ? p[0].slice(0, 38) + '…' : p[0])), datasets: [{ label: 'Số HSBA', data: pairs.map((p) => p[1]), backgroundColor: color || '#009247' }] }, options: dlsBase({ indexAxis: 'y', plugins: { legend: { display: false }, datalabels: { display: true, anchor: 'end', align: 'end', font: { size: 10 } } }, layout: { padding: { right: 24 } }, scales: { x: { beginAtZero: true } } }) }, h || Math.max(140, pairs.length * 28 + 40)));
+}
+function ksTable(head, rows) {
+  return `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>${head.map((h) => `<th style="${KS_TH}">${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td style="${KS_TD}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+
+// ---------- Trang chính ----------
+function ksHTML() {
+  const d = ksS(), dl = dlsS();
+  dl.pending = []; dl.seq = 0;
+  if (d.loading || !d.loaded) return '<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Đang tải báo cáo quản lý kháng sinh...</div>';
+  const canEdit = state.role === 'editor';
+  const ys = ksYears(), ms = ksMonths(d.year);
+  const nav = KS_SECS.map(([k, lb]) => `<button data-ks-sec="${k}" style="padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid ${d.sec === k ? '#009247' : '#cbd5e1'};background:${d.sec === k ? '#009247' : '#fff'};color:${d.sec === k ? '#fff' : '#475569'};">${lb}</button>`).join('');
+  const bar = `<div class="flex items-center gap-3 flex-wrap mb-3">
+      <label class="text-xs text-slate-500">Năm <select id="ks-year" class="border border-slate-300 rounded-md px-2 py-1 text-sm">${(ys.length ? ys : [d.year]).map((y) => `<option value="${y}" ${y === d.year ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
+      <label class="text-xs text-slate-500">Tháng báo cáo <select id="ks-month" class="border border-slate-300 rounded-md px-2 py-1 text-sm">${(ms.length ? ms : [d.month]).map((m) => `<option value="${m}" ${m === d.month ? 'selected' : ''}>Tháng ${m}</option>`).join('')}</select></label>
+      ${canEdit ? `<span style="margin-left:auto;"><input type="file" id="ks-import-file" accept=".xlsx,.xls" class="hidden" /><button id="btn-ks-import" class="border border-slate-300 text-slate-700 rounded-md px-3 py-2 text-sm font-medium hover:bg-slate-50">Import file báo cáo Excel</button></span>` : ''}
+    </div><div id="ks-import-msg"></div><div class="flex gap-2 flex-wrap mb-4">${nav}</div>`;
+  let body;
+  if (!d.ci.length && !d.hsba.length && !d.ddd.length) body = `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Chưa có dữ liệu.${canEdit ? ' Bấm "Import file báo cáo Excel" và chọn file báo cáo quản lý sử dụng kháng sinh tháng.' : ''}</div>`;
+  else if (d.sec === 'overview') body = ksOverviewHTML();
+  else if (d.sec === 'cd') body = ksChuyenDoiHTML();
+  else if (d.sec === 'dp') body = ksDuPhongHTML();
+  else if (d.sec === 'hc') body = ksHoiChanHTML();
+  else body = ksDddHTML();
+  return bar + body;
+}
+
+// ---------- Tổng quan ----------
+function ksOverviewHTML() {
+  const d = ksS(), y = d.year, m = d.month, inds = ksInd(y);
+  if (!inds.length) return '<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Chưa có số liệu 8 chỉ số năm ' + y + '.</div>';
+  const mlist = Array.from(new Set(inds.flatMap((it) => Object.keys(it.m).filter((k) => it.m[k].v != null).map(Number)))).sort((a, b) => a - b);
+  const upto = Math.max(m, ...mlist, 1);
+  const labels = Array.from({ length: upto }, (_, i) => 'T' + (i + 1));
+  let pass = 0, fail = 0;
+  const kpis = inds.map((it) => {
+    const c = it.m[m] && it.m[m].v, p = it.m[m - 1] && it.m[m - 1].v, ok = ksOk(it, c);
+    if (ok === true) pass++; else if (ok === false) fail++;
+    const diff = c != null && p != null ? c - p : null;
+    const dtxt = diff == null ? '' : `<br><span style="color:${Math.abs(diff) < 1e-9 ? '#64748b' : (diff > 0) === (it.dir === '>=') ? '#047857' : '#b91c1c'};">${diff > 0 ? '▲' : diff < 0 ? '▼' : '='} ${dlsNF.format(+(Math.abs(diff) * 100).toFixed(1))} điểm % so với tháng trước</span>`;
+    const lb = it.label.replace(/^Tỷ lệ\s*/i, '');
+    return dlsKpi(`${it.stt}. ${lb.length > 60 ? lb.slice(0, 58) + '…' : lb}`, c == null ? '—' : ksPct(c), `Mục tiêu ${escapeHtml(it.mt || '')} · <b>${ok === true ? 'Đạt' : ok === false ? 'Chưa đạt' : 'Chưa có số liệu'}</b>${dtxt}`, ok === true ? 'good' : ok === false ? 'bad' : 'neutral');
+  }).join('');
+  // cảnh báo
+  const al = [];
+  inds.forEach((it) => {
+    const c = it.m[m] && it.m[m].v;
+    if (ksOk(it, c) !== false) return;
+    let streak = 0;
+    for (let k = m; k >= 1; k--) { const v = it.m[k] && it.m[k].v; if (ksOk(it, v) === false) streak++; else break; }
+    al.push(`<li>🔴 <b>${it.stt}. ${escapeHtml(it.label)}</b>: ${ksPct(c)} (mục tiêu ${escapeHtml(it.mt || '')})${streak >= 2 ? ` — <b>chưa đạt ${streak} tháng liên tiếp</b>` : ''}</li>`);
+  });
+  const alertCard = dlsCard(`🔔 Điểm cần chú ý — tháng ${m}/${y}`, `<div class="text-sm mb-2">Đạt mục tiêu: <b style="color:#047857;">${pass}</b> chỉ số · Chưa đạt: <b style="color:#b91c1c;">${fail}</b> chỉ số</div>${al.length ? `<ul style="font-size:13px;line-height:1.7;">${al.join('')}</ul>` : '<div class="text-sm text-slate-500">Tất cả chỉ số có số liệu đều đạt mục tiêu.</div>'}`);
+  // bảng chỉ số × tháng
+  const tdc = 'padding:4px 6px;text-align:right;white-space:nowrap;';
+  const matrix = `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr><th style="${KS_TH}">Chỉ số</th><th style="${KS_TH}">Mục tiêu</th>${labels.map((l) => `<th style="${KS_TH}text-align:right;">${l}</th>`).join('')}</tr></thead><tbody>${inds.map((it) => `<tr><td style="${KS_TD}min-width:240px;">${it.stt}. ${escapeHtml(it.label)}</td><td style="${KS_TD}white-space:nowrap;">${escapeHtml(it.mt || '')}</td>${labels.map((l, i) => { const v = it.m[i + 1] && it.m[i + 1].v, ok = ksOk(it, v); return `<td style="${KS_TD}${tdc}background:${ok === true ? '#ecfdf5' : ok === false ? '#fef2f2' : 'transparent'};${i + 1 === m ? 'font-weight:700;outline:2px solid #009247;outline-offset:-2px;' : ''}">${v == null ? '' : ksPct(v)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div><div class="text-xs text-slate-400 mt-2">Xanh: đạt mục tiêu · Đỏ: chưa đạt · Khung xanh đậm: tháng đang xem. Chỉ số 6–8 là tỉ lệ <b>giảm</b> so với cùng kỳ năm trước (số âm = tăng).</div>`;
+  // biểu đồ từng chỉ số
+  const charts = inds.map((it) => {
+    const data = labels.map((_, i) => { const v = it.m[i + 1] && it.m[i + 1].v; return v == null ? null : +(v * 100).toFixed(2); });
+    const ds = [{ label: 'Kết quả', data, borderColor: '#009247', backgroundColor: '#009247', tension: 0.25, spanGaps: true, pointBackgroundColor: data.map((v, i) => { const ok = ksOk(it, v == null ? null : v / 100); return ok === false ? '#ef4444' : '#009247'; }), pointRadius: 4 }];
+    if (it.tv != null) ds.push({ label: 'Mục tiêu ' + (it.mt || ''), data: labels.map(() => +(it.tv * 100).toFixed(2)), borderColor: '#f59e0b', borderDash: [6, 4], pointRadius: 0, fill: false });
+    return dlsCard(`${it.stt}. ${escapeHtml(it.label)}`, dlsChartBox({ type: 'line', data: { labels, datasets: ds }, options: dlsBase({ scales: { y: { ticks: { callback: (v) => v + '%' } } } }) }, 190));
+  }).join('');
+  // nhận xét
+  const notes = inds.filter((it) => it.m[m] && (it.m[m].nx || it.m[m].gc)).map((it) => `<div style="margin-bottom:14px;"><div style="font-size:12px;font-weight:700;color:#334155;">${it.stt}. ${escapeHtml(it.label)} — <span style="color:${ksOk(it, it.m[m].v) === false ? '#b91c1c' : '#047857'};">${ksOk(it, it.m[m].v) === false ? 'Chưa đạt yêu cầu' : 'Đạt yêu cầu'}</span></div>${it.m[m].gc ? `<div style="font-size:12px;white-space:pre-wrap;margin-top:3px;">${escapeHtml(it.m[m].gc)}</div>` : ''}${it.m[m].nx ? `<div style="font-size:12px;white-space:pre-wrap;margin-top:3px;color:#475569;"><b>Nhận xét:</b> ${escapeHtml(it.m[m].nx)}</div>` : ''}</div>`).join('');
+  const noteCard = dlsCard(`📝 Nhận xét & ghi chú — tháng ${m}/${y}`, notes || '<div class="text-sm text-slate-400">Tháng này chưa có nhận xét/ghi chú trong file import.</div>');
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:16px;">${kpis}</div>${alertCard}${dlsCard('Bảng 8 chỉ số theo tháng', matrix)}${noteCard}<div class="grid md:grid-cols-2 gap-4">${charts}</div>`;
+}
+
+// ---------- Chuyển đổi ----------
+function ksChuyenDoiHTML() {
+  const d = ksS(), rows = ksRows('chuyen_doi');
+  if (!rows.length) return `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Chưa có danh sách chuyển đổi KS tháng ${d.month}/${d.year}.</div>`;
+  const yes = (v) => /^(có|thoả|thỏa)/i.test(v || '');
+  const nDk = rows.filter((r) => yes(ksDu(r, 'thoa_dk'))).length;
+  const chuyen = rows.filter((r) => yes(ksDu(r, 'chuyen_doi')));
+  const nCd = chuyen.length;
+  const chuaHopLy = chuyen.filter((r) => /chưa phù hợp/i.test(ksDu(r, 'hop_ly')));
+  const khongCd = rows.filter((r) => yes(ksDu(r, 'thoa_dk')) && !yes(ksDu(r, 'chuyen_doi')));
+  const avg = (k) => { const v = rows.map((r) => parseFloat(ksDu(r, k))).filter((x) => !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const kpis = [
+    dlsKpi('HSBA dùng KS đường tiêm', dlsNF.format(rows.length), 'Trong tháng ' + d.month, 'neutral'),
+    dlsKpi('Đủ điều kiện chuyển đổi', dlsNF.format(nDk), ksPct(nDk / rows.length) + ' số HSBA', 'neutral'),
+    dlsKpi('Đã chuyển đổi', dlsNF.format(nCd), 'Tỉ lệ chuyển đổi / đủ ĐK: <b>' + ksPct(nDk ? nCd / nDk : null) + '</b>', nDk && nCd / nDk >= 0.8 ? 'good' : 'warn'),
+    dlsKpi('Đủ ĐK nhưng không chuyển', dlsNF.format(khongCd.length), 'Cần rà soát', khongCd.length ? 'warn' : 'good'),
+    dlsKpi('Chuyển đổi chưa đúng hướng dẫn', dlsNF.format(chuaHopLy.length), 'Lựa chọn KS uống chưa phù hợp', chuaHopLy.length ? 'bad' : 'good'),
+    dlsKpi('Số ngày KS tiêm TB', avg('ngay_ks_tiem') == null ? '—' : dlsNF.format(+avg('ngay_ks_tiem').toFixed(1)), 'Ngày nằm viện TB: ' + (avg('nam_vien') == null ? '—' : dlsNF.format(+avg('nam_vien').toFixed(1))), 'neutral'),
+  ].join('');
+  const funnel = dlsCard('Phễu chuyển đổi', dlsChartBox({ type: 'bar', data: { labels: ['HSBA dùng KS tiêm', 'Đủ điều kiện', 'Đã chuyển đổi', 'Chuyển đổi đúng hướng dẫn'], datasets: [{ data: [rows.length, nDk, nCd, nCd - chuaHopLy.length], backgroundColor: ['#94a3b8', '#3b82f6', '#009247', '#14b8a6'] }] }, options: dlsBase({ indexAxis: 'y', plugins: { legend: { display: false }, datalabels: { display: true, anchor: 'end', align: 'end', font: { size: 11, weight: 'bold' } } }, layout: { padding: { right: 30 } }, scales: { x: { beginAtZero: true } } }) }, 190));
+  // theo khoa
+  const khoas = Array.from(new Set(rows.map((r) => r.khoa || '—'))).sort();
+  const kt = ksTable(['Khoa', 'HSBA tiêm', 'Đủ ĐK', 'Đã chuyển', 'Tỉ lệ chuyển / đủ ĐK', 'Không chuyển dù đủ ĐK'], khoas.map((k) => { const rr = rows.filter((r) => (r.khoa || '—') === k), dk = rr.filter((r) => yes(ksDu(r, 'thoa_dk'))), cd = dk.filter((r) => yes(ksDu(r, 'chuyen_doi'))); const rt = dk.length ? cd.length / dk.length : null; return [escapeHtml(k), rr.length, dk.length, cd.length, `<span style="font-weight:700;color:${rt != null && rt < 0.8 ? '#b91c1c' : '#047857'};">${ksPct(rt)}</span>`, dk.length - cd.length]; }));
+  const lst = (title, arr) => dlsCard(`${title} (${arr.length})`, arr.length ? ksTable(['Mã HSBA', 'Khoa', 'Chẩn đoán', 'KS đường tiêm', 'Ngày KS tiêm', 'Ghi nhận'], arr.map((r) => [`<span style="font-family:monospace;">${escapeHtml(r.ma_hsba || '')}</span>`, escapeHtml(r.khoa || ''), escapeHtml(ksDu(r, 'icd').slice(0, 60)), escapeHtml(ksDu(r, 'ks_tiem').replace(/\n/g, ', ')), escapeHtml(ksDu(r, 'ngay_ks_tiem')), escapeHtml(ksDu(r, 'hop_ly') || ksDu(r, 'hinh_thuc'))])) : '<div class="text-sm text-emerald-700">Không có HSBA nào.</div>', 'Không lưu tên người bệnh — tra cứu lại bệnh án bằng mã HSBA.');
+  const charts = `<div class="grid md:grid-cols-2 gap-4">${ksBarCard('Hình thức chuyển đổi', ksCount(chuyen, (r) => ksDu(r, 'hinh_thuc')))}${ksBarCard('Loại nhiễm khuẩn', ksCount(rows, (r) => ksDu(r, 'loai_nk')))}${ksBarCard('Nhóm kháng sinh tiêm truyền', ksCount(rows, (r) => ksDu(r, 'nhom_ks')))}${ksBarCard('Kháng sinh đường uống sau chuyển đổi', ksCount(chuyen, (r) => ksDu(r, 'ks_uong').replace(/\n/g, ' + ')).slice(0, 10), '#3b82f6')}</div>`;
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px;">${kpis}</div><div class="grid md:grid-cols-2 gap-4">${funnel}${dlsCard('Theo khoa', kt)}</div>${charts}${lst('⚠️ Đủ điều kiện nhưng không chuyển đổi', khongCd)}${lst('⚠️ Chuyển đổi chưa đúng hướng dẫn', chuaHopLy)}`;
+}
+
+// ---------- Dự phòng ----------
+const KS_ACTIVES = [['Cefazolin', /cefazolin|biofazolin/i], ['Cefuroxim', /cefuroxim|tenamyd\s*cefu/i], ['Ampicillin/Sulbactam', /ampicillin|sulbactam|nerusyn|unasyn/i], ['Ceftriaxon', /ceftriaxon/i], ['Ceftazidim', /ceftazidim|tenamyd/i], ['Gentamicin', /gentamicin/i], ['Metronidazol', /metronidazol/i], ['Amikacin', /amikacin/i], ['Ciprofloxacin', /ciprofloxacin/i], ['Levofloxacin', /levofloxacin/i], ['Cefoperazon', /cefoperazon|sulperazon/i], ['Meropenem', /meropenem/i]];
+function ksActiveList(text) { const out = []; KS_ACTIVES.forEach(([n, re]) => { if (re.test(text) && !out.includes(n)) out.push(n); }); return out.length ? out : ['Khác']; }
+function ksDuPhongHTML() {
+  const d = ksS(), rows = ksRows('du_phong');
+  if (!rows.length) return `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Chưa có danh sách KS dự phòng tháng ${d.month}/${d.year}.</div>`;
+  const pl = (r) => ksDu(r, 'phan_loai');
+  const sach = rows.filter((r) => /sạch/i.test(pl(r))), nhiem = rows.filter((r) => /^PT nhiễm/i.test(pl(r))), ban = rows.filter((r) => /bẩn/i.test(pl(r)));
+  const dpOk = sach.filter((r) => /dự phòng/i.test(ksDu(r, 'muc_dich')));
+  const chuyen = rows.filter((r) => /^có/i.test(ksDu(r, 'chuyen_doi')) && /dự phòng/i.test(ksDu(r, 'muc_dich')));
+  const bad = rows.filter((r) => ksDu(r, 'ghi_chu') && !/^phù hợp/i.test(ksDu(r, 'ghi_chu')));
+  const kpis = [
+    dlsKpi('Tổng ca phẫu thuật', dlsNF.format(rows.length), 'Có dùng kháng sinh', 'neutral'),
+    dlsKpi('PT sạch / sạch-nhiễm', dlsNF.format(sach.length), 'Dùng KS dự phòng đúng: <b>' + dlsNF.format(dpOk.length) + '</b> (' + ksPct(sach.length ? dpOk.length / sach.length : null) + ')', sach.length && dpOk.length / sach.length >= 0.95 ? 'good' : 'warn'),
+    dlsKpi('PT nhiễm', dlsNF.format(nhiem.length), 'Dùng KS điều trị', 'neutral'),
+    dlsKpi('PT bẩn', dlsNF.format(ban.length), 'Dùng KS điều trị', 'neutral'),
+    dlsKpi('KSDP chuyển sang điều trị', dlsNF.format(chuyen.length), 'Mục tiêu ≤ 5%: ' + ksPct(dpOk.length ? chuyen.length / dpOk.length : 0), dpOk.length && chuyen.length / dpOk.length > 0.05 ? 'bad' : 'good'),
+    dlsKpi('Ca cần rà soát', dlsNF.format(bad.length), 'Ghi chú khác "Phù hợp"', bad.length ? 'warn' : 'good'),
+  ].join('');
+  const khoas = Array.from(new Set(rows.map((r) => r.khoa || '—'))).sort();
+  const kt = ksTable(['Khoa', 'Số ca PT', 'PT sạch/sạch-nhiễm', 'PT nhiễm', 'PT bẩn', 'Có KS dự phòng'], khoas.map((k) => { const rr = rows.filter((r) => (r.khoa || '—') === k); return [escapeHtml(k), rr.length, rr.filter((r) => /sạch/i.test(pl(r))).length, rr.filter((r) => /^PT nhiễm/i.test(pl(r))).length, rr.filter((r) => /bẩn/i.test(pl(r))).length, rr.filter((r) => /dự phòng/i.test(ksDu(r, 'muc_dich'))).length]; }));
+  const acts = new Map();
+  rows.forEach((r) => ksActiveList(ksDu(r, 'khang_sinh')).forEach((a) => acts.set(a, (acts.get(a) || 0) + 1)));
+  const actPairs = Array.from(acts.entries()).sort((a, b) => b[1] - a[1]);
+  const lst = bad.length ? dlsCard(`⚠️ Ca cần rà soát (${bad.length})`, ksTable(['Mã HSBA', 'Khoa', 'Phẫu thuật', 'Phân loại', 'Kháng sinh', 'Ghi chú'], bad.map((r) => [`<span style="font-family:monospace;">${escapeHtml(r.ma_hsba || '')}</span>`, escapeHtml(r.khoa || ''), escapeHtml(ksDu(r, 'ten_pt').slice(0, 70)), escapeHtml(pl(r)), escapeHtml(ksDu(r, 'khang_sinh').replace(/\n/g, ' ')), escapeHtml(ksDu(r, 'ghi_chu'))]))) : '';
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px;">${kpis}</div>
+    <div class="grid md:grid-cols-2 gap-4">${ksBarCard('Phân loại phẫu thuật', ksCount(rows, pl), '#f59e0b')}${ksBarCard('Kháng sinh sử dụng (theo hoạt chất)', actPairs, '#009247')}</div>${dlsCard('Theo khoa', kt)}${lst}`;
+}
+
+// ---------- Hội chẩn & Phác đồ ----------
+function ksHoiChanHTML() {
+  const d = ksS(), hc = ksRows('hoi_chan'), pd = ksRows('phac_do');
+  if (!hc.length && !pd.length) return `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Chưa có danh sách hội chẩn / chỉ định chưa đúng tháng ${d.month}/${d.year}.</div>`;
+  const luot = hc.reduce((a, r) => a + (parseFloat(ksDu(r, 'so_luot')) || 0), 0);
+  const coBb = hc.filter((r) => /^có/i.test(ksDu(r, 'bb_hc')));
+  const kpis = [
+    dlsKpi('HSBA dùng KS hội chẩn', dlsNF.format(hc.length), 'Trong tháng ' + d.month, 'neutral'),
+    dlsKpi('Lượt chỉ định KS hội chẩn', dlsNF.format(luot), 'Tổng số lượt', 'neutral'),
+    dlsKpi('Có biên bản hội chẩn', hc.length ? ksPct(coBb.length / hc.length) : '—', coBb.length + ' / ' + hc.length + ' HSBA · mục tiêu ≥ 90%', hc.length && coBb.length / hc.length < 0.9 ? 'bad' : 'good'),
+    dlsKpi('Lượt chỉ định chưa đúng phác đồ', dlsNF.format(pd.reduce((a, r) => a + (parseFloat(ksDu(r, 'so_luot')) || 1), 0)), pd.length + ' dòng ghi nhận', pd.length ? 'warn' : 'good'),
+  ].join('');
+  const hcCard = dlsCard(`Danh sách KS hội chẩn (${hc.length})`, hc.length ? ksTable(['Mã HSBA', 'Ngày', 'Khoa', 'Kháng sinh', 'Biên bản HC', 'Số lượt', 'Ghi chú'], hc.map((r) => [`<span style="font-family:monospace;">${escapeHtml(r.ma_hsba || '')}</span>`, escapeHtml(String(r.ngay || '').split('-').reverse().join('/')), escapeHtml(r.khoa || ''), escapeHtml(ksDu(r, 'thuoc')), escapeHtml(ksDu(r, 'bb_hc')), escapeHtml(ksDu(r, 'so_luot')), escapeHtml(ksDu(r, 'ghi_chu'))])) : '<div class="text-sm text-slate-400">Không có.</div>', 'Không lưu tên người bệnh.');
+  const pdCard = dlsCard(`Chỉ định kháng sinh chưa đúng phác đồ (${pd.length})`, pd.length ? ksTable(['Mã HSBA', 'Khoa', 'Chẩn đoán', 'Kháng sinh', 'Lượt', 'Lý do không đạt', 'Ghi chú'], pd.map((r) => [`<span style="font-family:monospace;">${escapeHtml(r.ma_hsba || '')}</span>`, escapeHtml(r.khoa || ''), escapeHtml(ksDu(r, 'icd').slice(0, 60)), escapeHtml(ksDu(r, 'khang_sinh')), escapeHtml(ksDu(r, 'so_luot')), escapeHtml(ksDu(r, 'ly_do')), escapeHtml(ksDu(r, 'ghi_chu'))])) : '<div class="text-sm text-emerald-700">Không có chỉ định nào chưa đúng phác đồ.</div>', 'Không lưu tên người bệnh.');
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:16px;">${kpis}</div>${hcCard}${pdCard}`;
+}
+
+// ---------- DDD ----------
+function ksCanon(n) {
+  return String(n || '').toLowerCase().replace(/\*/g, '').replace(/\s+/g, ' ').trim().replace(/cillin/g, 'cilin').replace(/\b(cef\w+?)ime\b/g, '$1im').split(' + ').map((x) => x.charAt(0).toUpperCase() + x.slice(1)).join(' + ');
+}
+function ksDddAgg(y, m) {
+  const out = new Map(); let total = 0;
+  ksS().ddd.filter((r) => r.nam === y && r.thang === m).forEach((r) => {
+    const k = ksCanon(r.hoat_chat || r.ten_thuoc);
+    const it = out.get(k) || { ddd100: 0, ngay: 0, route: {}, n: 0 };
+    it.ddd100 += r.ddd100 || 0; it.n++;
+    const rt = r.duong_dung || ''; it.route[rt] = (it.route[rt] || 0) + (r.ddd100 || 0);
+    out.set(k, it); total += r.ddd100 || 0;
+  });
+  return { map: out, total };
+}
+function ksDddHTML() {
+  const d = ksS(), y = d.year, m = d.month, cur = ksDddAgg(y, m);
+  if (!cur.map.size) return `<div class="text-sm text-slate-400 py-10 text-center bg-white border border-slate-200 rounded-lg">Chưa có bảng DDD tháng ${m}/${y}.</div>`;
+  const yoyOk = ksDddAgg(y - 1, m).map.size > 0, mom = m > 1 ? ksDddAgg(y, m - 1) : { map: new Map(), total: 0 };
+  let mode = d.dddCmp === 'mom' && mom.map.size ? 'mom' : (yoyOk ? 'yoy' : (mom.map.size ? 'mom' : 'none'));
+  const prev = mode === 'yoy' ? ksDddAgg(y - 1, m) : mode === 'mom' ? mom : { map: new Map(), total: 0 };
+  const plabel = mode === 'yoy' ? `T${m}/${y - 1}` : mode === 'mom' ? `T${m - 1}/${y}` : '';
+  const chg = prev.total ? (cur.total - prev.total) / prev.total : null;
+  const kpis = [
+    dlsKpi('DDD/100 ngày giường', dlsNF.format(Math.round(cur.total)), `Tháng ${m}/${y}`, 'neutral'),
+    prev.total ? dlsKpi('So với ' + plabel, (chg > 0 ? '+' : '') + ksPct(chg), `${dlsNF.format(Math.round(prev.total))} → ${dlsNF.format(Math.round(cur.total))}` + (mode === 'yoy' ? '<br>Mục tiêu giảm ≥ 5%' : ''), chg != null && chg <= -0.05 ? 'good' : chg > 0 ? 'bad' : 'warn') : '',
+    dlsKpi('Số hoạt chất', dlsNF.format(cur.map.size), (prev.map.size ? 'Kỳ so sánh: ' + prev.map.size : ''), 'neutral'),
+  ].join('');
+  const keys = Array.from(new Set([...cur.map.keys(), ...prev.map.keys()]));
+  const rows = keys.map((k) => { const a = cur.map.get(k), b = prev.map.get(k); return { k, a: a ? a.ddd100 : 0, b: b ? b.ddd100 : 0, isNew: a && !b && prev.map.size > 0, gone: !a && b }; }).sort((x, y2) => y2.a - x.a);
+  const top = rows.slice(0, 12);
+  const chart = dlsCard('Top 12 hoạt chất — DDD/100 ngày giường', dlsChartBox({ type: 'bar', data: { labels: top.map((r) => r.k.length > 28 ? r.k.slice(0, 26) + '…' : r.k), datasets: [{ label: `T${m}/${y}`, data: top.map((r) => +r.a.toFixed(1)), backgroundColor: '#009247' }, ...(prev.map.size ? [{ label: plabel, data: top.map((r) => +r.b.toFixed(1)), backgroundColor: '#94a3b8' }] : [])] }, options: dlsBase({ indexAxis: 'y' }) }, Math.max(240, top.length * (prev.map.size ? 40 : 26) + 60)));
+  const tbl = dlsCard('Chi tiết theo hoạt chất', ksTable(['Hoạt chất', `DDD/100NG T${m}/${y}`, plabel ? 'DDD/100NG ' + plabel : '', 'Thay đổi', ''], rows.map((r) => { const df = r.a - r.b, pc = r.b ? df / r.b : null; return [escapeHtml(r.k), dlsNF.format(+r.a.toFixed(1)), prev.map.size ? dlsNF.format(+r.b.toFixed(1)) : '', prev.map.size ? `<span style="color:${df > 0 ? '#b91c1c' : df < 0 ? '#047857' : '#64748b'};">${df > 0 ? '▲' : df < 0 ? '▼' : ''} ${dlsNF.format(+Math.abs(df).toFixed(1))}${pc != null ? ' (' + (pc > 0 ? '+' : '') + ksPct(pc, 0) + ')' : ''}</span>` : '', r.isNew ? '<span style="color:#b45309;font-weight:700;">Mới xuất hiện</span>' : r.gone ? '<span style="color:#64748b;">Không còn dùng</span>' : '']; })), 'Tổng DDD/100 ngày giường = cộng DDD/100 ngày giường của từng thuốc (cùng cách tính báo cáo). Mục tiêu: giảm ≥ 5% so với cùng kỳ năm trước.');
+  // xu hướng nhiều tháng
+  const ms = ksMonths(y).filter((mm) => ksDddAgg(y, mm).map.size);
+  const trend = ms.length >= 2 ? dlsCard('Xu hướng DDD/100 ngày giường các tháng', dlsChartBox({ type: 'line', data: { labels: ms.map((x) => 'T' + x), datasets: [{ label: String(y), data: ms.map((x) => Math.round(ksDddAgg(y, x).total)), borderColor: '#009247', backgroundColor: '#009247', tension: 0.25 }, { label: String(y - 1), data: ms.map((x) => { const t = ksDddAgg(y - 1, x).total; return t ? Math.round(t) : null; }), borderColor: '#94a3b8', backgroundColor: '#94a3b8', borderDash: [6, 4], spanGaps: true }] }, options: dlsBase({}) }, 220)) : '';
+  const sw = yoyOk && mom.map.size ? `<div class="flex gap-2 mb-3 text-xs"><span class="text-slate-500 self-center">So sánh với:</span>${[['yoy', `Cùng kỳ năm ${y - 1}`], ['mom', 'Tháng trước']].map(([k, lb]) => `<button data-ks-cmp="${k}" style="padding:4px 10px;border-radius:999px;border:1px solid ${mode === k ? '#009247' : '#cbd5e1'};background:${mode === k ? '#009247' : '#fff'};color:${mode === k ? '#fff' : '#475569'};">${lb}</button>`).join('')}</div>` : '';
+  return `${sw}<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-bottom:16px;">${kpis}</div>${trend}${chart}${tbl}`;
+}
+
+// ---------- Import ----------
+const KS_SHEETS = { 'QLKS Phác đồ': { loai: 'phac_do', map: [['ma_hsba', /^mã tiếp nhận/], ['tuoi', /^tuổi$/], ['gioi', /^giới tính$/], ['icd', /^icd chính/], ['khoa', /^khoa$/], ['khang_sinh', /^tên kháng sinh/], ['so_luot', /^số lượt chỉ định/], ['so_luong', /^số lượng$/], ['lieu', /^liều dùng/], ['ly_do', /^lý do không đạt/], ['ghi_chu', /^ghi chú/]] },
+  'QLKS Hội chẩn': { loai: 'hoi_chan', map: [['ngay', /^ngày$/], ['khoa', /^khoa$/], ['ma_hsba', /^mã ba$/], ['chan_doan', /^chẩn đoán/], ['thuoc', /^tên thuốc/], ['bb_hc', /^biên bản/], ['so_luot', /^số lượt chỉ định/], ['ghi_chu', /^ghi chú/]] },
+  'QLKS Dự phòng': { loai: 'du_phong', map: [['khoa', /^khoa$/], ['ma_hsba', /^mã hsba$/], ['chan_doan', /^chẩn đoán/], ['gioi', /^giới tính$/], ['tuoi', /^tuổi$/], ['ten_pt', /^tên phẫu thuật/], ['ngay', /^ngày pt/], ['phan_loai', /^phân loại phẫu thuật/], ['khang_sinh', /^kháng sinh$/], ['muc_dich', /^mục đích/], ['chuyen_doi', /^chuyển đổi ks dự phòng/], ['ghi_chu', /^ghi chú/]] },
+  'QLKS Chuyển đổi': { loai: 'chuyen_doi', map: [['loai_bn', /^loại bệnh nhân/], ['ma_hsba', /^mã tiếp nhận/], ['icd', /^icd chính/], ['khoa', /^khoa$/], ['ngay', /^ngày tạo/], ['tuoi', /^tuổi$/], ['gioi', /^giới tính$/], ['so_benh_kem', /^số bệnh mắc kèm/], ['benh_kem', /^bệnh mắc kèm/], ['gan', /^chức năng gan/], ['loc_cau_than', /^độ lọc/], ['wbc', /^wbc$/], ['neu', /^neu$/], ['crp', /^crp/], ['loai_nk', /^loại nhiễm khuẩn/], ['cay', /^cấy bệnh phẩm/], ['nhom_ks', /^nhóm kháng sinh/], ['thoa_dk', /^thỏa điều kiện/], ['hinh_thuc', /^hình thức/], ['hop_ly', /^tính hợp/], ['ngay_ks_tiem', /^số ngày sử dụng ks/], ['nam_vien', /^thời gian nằm viện/], ['tai_kham', /^tái khám/], ['dung_ks', /^dùng ks/]] } };
+function ksNorm(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().toLowerCase(); }
+function ksDate(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') { const p = XLSX.SSF.parse_date_code(v); return p ? `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}` : null; }
+  const s = String(v); let m = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : null;
+}
+function ksNum(x) {
+  if (x == null || x === '') return null;
+  if (typeof x === 'number') return x;
+  const s = String(x).trim(), m = s.match(/^(-?\d+(?:[.,]\d+)?)\s*(%?)$/);
+  if (!m) return null;
+  let v = parseFloat(m[1].replace(',', '.')); if (m[2]) v /= 100; return v;
+}
+function ksParseReport(ws) {
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  const title = String((aoa[0] || []).find((c) => c) || '');
+  const ym = title.match(/năm\s*(\d{4})/i);
+  const hr = aoa.findIndex((r) => r && r.some((c) => ksNorm(c) === 'chỉ số'));
+  if (hr < 0) return null;
+  const mrow = aoa[hr + 1] || [], head = aoa[hr];
+  const mcols = []; mrow.forEach((c, i) => { const m = String(c || '').trim().match(/^T(\d{1,2})$/i); if (m) mcols.push([i, +m[1]]); });
+  const col = (re) => head.findIndex((c) => re.test(ksNorm(c)));
+  const cMt = col(/^mục tiêu/), cCach = col(/^cách thức/), cNx = col(/^nhận xét/), cGc = col(/^ghi chú/), cName = col(/^chỉ số/);
+  const items = [];
+  for (let i = hr + 2; i < aoa.length; i++) {
+    const r = aoa[i]; if (!r || !r[cName]) continue;
+    const stt = parseInt(r[0], 10); if (!stt) continue;
+    const mt = String(r[cMt] || '').trim(), mm = mt.match(/([≥≤])\s*(\d+(?:[.,]\d+)?)\s*%/);
+    const vals = {}; mcols.forEach(([ci, m]) => { const v = ksNum(r[ci]); if (v != null) vals[m] = v; });
+    items.push({ stt, label: String(r[cName]).replace(/\s+/g, ' ').trim(), mt, dir: mm ? (mm[1] === '≥' ? '>=' : '<=') : null, tv: mm ? parseFloat(mm[2].replace(',', '.')) / 100 : null, cach: String(r[cCach] || '').trim(), vals, nx: String(r[cNx] || '').trim(), gc: String(r[cGc] || '').trim() });
+  }
+  return { year: ym ? +ym[1] : null, items };
+}
+function ksParseDetail(ws, cfg) {
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  let end = null;
+  for (let r = 0; r < Math.min(3, aoa.length) && !end; r++) (aoa[r] || []).forEach((c) => { const m = c && String(c).match(/đến ngày\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i); if (m && !end) end = { y: +m[3], m: +m[2] }; });
+  const hi = aoa.findIndex((row) => row && row.some((c) => /^(mã tiếp nhận|mã ba|mã hsba)$/.test(ksNorm(c))));
+  if (hi < 0) return { end, rows: [] };
+  const head = aoa[hi].map(ksNorm), keys = head.map(() => null), used = new Set();
+  let cdSeen = 0;
+  head.forEach((h, i) => {
+    if (cfg.loai === 'chuyen_doi' && h === 'chuyển đổi kháng sinh') { cdSeen++; if (cdSeen === 1) keys[i] = 'chuyen_doi'; else { keys[i] = 'ks_tiem'; if (!head[i + 1]) keys[i + 1] = 'ks_uong'; } return; }
+    for (const [k, re] of cfg.map) if (!used.has(k) && re.test(h)) { keys[i] = k; used.add(k); break; }
+  });
+  const rows = [];
+  for (let i = hi + 1; i < aoa.length; i++) {
+    const row = aoa[i], du = {};
+    keys.forEach((k, c) => { if (!k) return; const v = row[c]; if (v == null || v === '') return; du[k] = typeof v === 'string' ? v.trim().slice(0, 1200) : v; });
+    const ma = String(du.ma_hsba || '').trim(); if (!ma) continue;
+    const iso = ksDate(du.ngay); delete du.ma_hsba; const khoa = String(du.khoa || '').trim(); delete du.khoa; delete du.ngay;
+    rows.push({ loai: cfg.loai, ma_hsba: ma, khoa, ngay: iso, du_lieu: du });
+  }
+  return { end, rows };
+}
+function ksParseDdd(ws, nam, thang) {
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  const out = [];
+  aoa.forEach((r, i) => {
+    if (i < 3 || !r || !r[2] || typeof r[0] === 'string' && isNaN(parseFloat(r[0]))) return;
+    if (isNaN(parseFloat(r[0]))) return;
+    const n = (x) => { const v = ksNum(x); return v == null ? null : v; };
+    let rt = String(r[5] || '').trim();
+    if (!/^(tiêm|uống)$/i.test(rt)) rt = /ống|lọ|chai|túi/i.test(rt + ' ' + String(r[7] || '')) ? 'Tiêm' : /viên|gói/i.test(rt + ' ' + String(r[7] || '')) ? 'Uống' : rt;
+    out.push({ nam, thang, ma_thuoc: String(r[1] || ''), ten_thuoc: String(r[2]).trim(), hoat_chat: String(r[3] || '').trim(), ham_luong: n(r[4]), duong_dung: rt, ddd: n(r[6]), don_vi: String(r[7] || '').trim(), sl_xuat: n(r[8]), ngay_giuong: n(r[9]), tong_luong: n(r[10]), tong_lieu: n(r[11]), ddd100: n(r[12]) });
+  });
+  return out;
+}
+async function handleKsImport(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const msgEl = document.getElementById('ks-import-msg');
+  const say = (ok, t) => { if (msgEl) msgEl.innerHTML = `<div class="${ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'} border rounded-md px-3 py-2 text-sm mb-3">${t}</div>`; };
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const d = ksS();
+    let rep = null; const hsba = [], ddd = [], tags = new Map(); let detailEnd = null;
+    wb.SheetNames.forEach((name) => {
+      const ws = wb.Sheets[name]; if (!ws || !ws['!ref']) return;
+      const nm = name.trim();
+      if (/^báo cáo$/i.test(nm)) { rep = ksParseReport(ws); return; }
+      const cfg = KS_SHEETS[nm];
+      if (cfg) { const r = ksParseDetail(ws, cfg); if (r.end) detailEnd = r.end; r.rows.forEach((x) => { x._end = r.end; hsba.push(x); }); return; }
+      const dm = nm.match(/^DDD\s*T(\d{1,2})\.(\d{4})$/i);
+      if (dm) ddd.push(...ksParseDdd(ws, +dm[2], +dm[1]));
+    });
+    if (!rep && !hsba.length && !ddd.length) { say(false, 'Không nhận ra sheet nào (cần sheet "Báo cáo", "QLKS Phác đồ/Hội chẩn/Dự phòng/Chuyển đổi", "DDD T9.2026"...).'); return; }
+    // Báo cáo
+    const year = (rep && rep.year) || (detailEnd && detailEnd.y) || d.year || new Date().getFullYear();
+    const ciRows = []; let lastMonth = 0;
+    if (rep) rep.items.forEach((it) => Object.keys(it.vals).forEach((m) => { if (+m > lastMonth) lastMonth = +m; }));
+    const oldNotes = new Map(); d.ci.filter((r) => r.nam === year).forEach((r) => { if (r.nhan_xet || r.ghi_chu) oldNotes.set(r.stt + '|' + r.thang, r); });
+    const ciMonths = new Set();
+    if (rep) rep.items.forEach((it) => Object.entries(it.vals).forEach(([m, v]) => {
+      m = +m; ciMonths.add(m);
+      const old = oldNotes.get(it.stt + '|' + m);
+      ciRows.push({ nam: year, thang: m, stt: it.stt, chi_so: it.label, muc_tieu: it.mt, muc_tieu_val: it.tv, muc_tieu_dir: it.dir, cach_do: it.cach, gia_tri: v, nhan_xet: m === lastMonth ? (it.nx || null) : (old ? old.nhan_xet : null), ghi_chu: m === lastMonth ? (it.gc || null) : (old ? old.ghi_chu : null) });
+    }));
+    // HSBA: tháng lấy từ tiêu đề từng sheet
+    hsba.forEach((x) => { const e = x._end || detailEnd || { y: year, m: lastMonth || 1 }; x.nam = e.y; x.thang = e.m; delete x._end; });
+    const hsbaKeys = new Map(); hsba.forEach((x) => hsbaKeys.set(x.loai + '|' + x.nam + '|' + x.thang, [x.loai, x.nam, x.thang]));
+    const dddKeys = new Map(); ddd.forEach((x) => dddKeys.set(x.nam + '|' + x.thang, [x.nam, x.thang]));
+    const cnt = (k) => Array.from(hsbaKeys.values()).filter((v) => v[0] === k).length;
+    const info = `Đọc được:\n• Sheet Báo cáo: ${rep ? rep.items.length + ' chỉ số, năm ' + year + ', tháng ' + Array.from(ciMonths).sort((a, b) => a - b).join(', ') : 'không có'}\n• Danh sách HSBA: ${hsba.length} dòng (${Array.from(new Set(Array.from(hsbaKeys.values()).map((v) => 'T' + v[2] + '/' + v[1]))).join(', ') || '—'})\n• DDD: ${ddd.length} dòng thuốc (${Array.from(dddKeys.values()).map((v) => 'T' + v[1] + '/' + v[0]).join(', ') || '—'})\n\nDữ liệu của đúng các tháng này sẽ được GHI ĐÈ (tháng khác giữ nguyên). Tên, SĐT, địa chỉ, ngày sinh người bệnh KHÔNG được lưu. Tiếp tục?`;
+    if (!confirm(info)) { ev.target.value = ''; return; }
+    if (msgEl) msgEl.innerHTML = '<div class="text-sm text-slate-500 mb-3">⏳ Đang ghi dữ liệu...</div>';
+    const ins = async (table, rows, n) => { for (let i = 0; i < rows.length; i += n) { const { error } = await sb.from(table).insert(rows.slice(i, i + n)); if (error) throw error; } };
+    if (ciRows.length) { const { error } = await sb.from('bhyt_ks_chi_so').delete().eq('nam', year).in('thang', Array.from(ciMonths)); if (error) throw error; await ins('bhyt_ks_chi_so', ciRows, 500); }
+    for (const [loai, y2, m2] of hsbaKeys.values()) { const { error } = await sb.from('bhyt_ks_hsba').delete().eq('loai', loai).eq('nam', y2).eq('thang', m2); if (error) throw error; }
+    if (hsba.length) await ins('bhyt_ks_hsba', hsba, 200);
+    for (const [y2, m2] of dddKeys.values()) { const { error } = await sb.from('bhyt_ks_ddd').delete().eq('nam', y2).eq('thang', m2); if (error) throw error; }
+    if (ddd.length) await ins('bhyt_ks_ddd', ddd, 300);
+    const [a, b, c] = await Promise.all([fetchAllRows('bhyt_ks_chi_so', ['nam', 'thang', 'stt']), fetchAllRows('bhyt_ks_hsba', ['nam', 'thang', 'id']), fetchAllRows('bhyt_ks_ddd', ['nam', 'thang', 'id'])]);
+    d.ci = a || []; d.hsba = b || []; d.ddd = c || []; d.loaded = true;
+    d.year = year; d.month = lastMonth || (detailEnd && detailEnd.m) || d.month; ksPickDefaults(false);
+    renderTab();
+    const m2 = document.getElementById('ks-import-msg');
+    if (m2) m2.innerHTML = `<div class="bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md px-3 py-2 text-sm mb-3">Đã import xong: ${ciRows.length} ô chỉ số, ${hsba.length} dòng HSBA, ${ddd.length} dòng DDD.</div>`;
+  } catch (err) {
+    say(false, 'Lỗi khi import: ' + escapeHtml((err && err.message) || String(err)) + ' — kiểm tra đã chạy file SQL tạo bảng chưa.');
+  } finally { ev.target.value = ''; }
+}
+function attachKsEvents() {
+  const d = ksS();
+  document.querySelectorAll('[data-ks-sec]').forEach((b) => { b.onclick = () => { d.sec = b.dataset.ksSec; renderTab(); }; });
+  document.querySelectorAll('[data-ks-cmp]').forEach((b) => { b.onclick = () => { d.dddCmp = b.dataset.ksCmp; renderTab(); }; });
+  const ye = document.getElementById('ks-year'); if (ye) ye.onchange = (e) => { d.year = +e.target.value; const ms = ksMonths(d.year); d.month = ms.length ? ms[ms.length - 1] : 1; renderTab(); };
+  const me = document.getElementById('ks-month'); if (me) me.onchange = (e) => { d.month = +e.target.value; renderTab(); };
+  const ib = document.getElementById('btn-ks-import'); if (ib) ib.onclick = () => document.getElementById('ks-import-file').click();
+  const f = document.getElementById('ks-import-file'); if (f) f.addEventListener('change', handleKsImport);
+}
+
 function ensureThuocLoaded() {
   if (state.thuocLoaded || state.thuocLoading) return;
   state.thuocLoading = true;
@@ -2526,7 +2907,7 @@ function thuocHTML() {
     <div class="flex text-sm rounded-md border border-slate-300 overflow-hidden mb-4 w-fit flex-wrap">
       ${thuocSubtabs().map((s) => `<button data-thuoc-subtab="${s.id}" class="px-4 py-2 font-medium ${state.thuocSubTab === s.id ? 'bg-brand-900 text-white' : 'bg-white text-slate-600'}">${s.label}</button>`).join('')}
     </div>
-    ${state.thuocSubTab === 'dls' && canSeeDls() ? dlsHTML() : thuocChongChiDinhHTML(canEdit)}
+    ${state.thuocSubTab === 'dls' && canSeeDls() ? dlsHTML() : state.thuocSubTab === 'ks' && canSeeDls() ? ksHTML() : thuocChongChiDinhHTML(canEdit)}
   `;
 }
 function thuocChongChiDinhHTML(canEdit) {
@@ -4121,6 +4502,7 @@ function attachTabEvents() {
   if (state.tab === 'thuoc') {
     document.querySelectorAll('[data-thuoc-subtab]').forEach((b) => { b.onclick = () => { state.thuocSubTab = b.dataset.thuocSubtab; renderTab(); }; });
     if (state.thuocSubTab === 'dls') attachDlsEvents();
+    if (state.thuocSubTab === 'ks') attachKsEvents();
     const thuocSearchEl = document.getElementById('thuoc-search');
     if (thuocSearchEl) {
       thuocSearchEl.addEventListener('input', (e) => { state.thuocSearch = e.target.value; renderTab(); });
