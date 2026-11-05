@@ -89,12 +89,11 @@ function escapeHtml(s) {
   return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 function normalizeQuarter(raw) {
-  const s = String(raw || '').trim().toLowerCase();
-  if (s.includes('iv') || s === 'q4' || s === '4') return 'Q4';
-  if (s.includes('iii') || s === 'q3' || s === '3') return 'Q3';
-  if (s.includes('ii') || s === 'q2' || s === '2') return 'Q2';
-  if (s.includes('i') || s === 'q1' || s === '1') return 'Q1';
-  return String(raw || '').trim();
+  const t = String(raw || '').trim();
+  // Chỉ nhận đúng dạng quý: "Quý I", "Quý 2", "Q3", "IV", "4"... — các tên kì tự đặt (Thanh tra, Kiểm toán đột xuất...) giữ nguyên
+  const m = t.toLowerCase().match(/^(?:q|quý|quy|qúy)?\s*\.?\s*(iv|iii|ii|i|1|2|3|4)$/);
+  if (!m) return t;
+  return { i: 'Q1', ii: 'Q2', iii: 'Q3', iv: 'Q4', 1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4' }[m[1]];
 }
 // Chuẩn hoá khoa/tên người: gộp theo chữ thường không phân biệt hoa/thường, hiển thị theo biến thể xuất hiện nhiều nhất
 function buildNormalizer(values) {
@@ -390,6 +389,9 @@ function compareBreakdown(rowsA, totalA, rowsB, totalB, dimension) {
   });
   return list.sort((x, y) => (y.costA + y.costB) - (x.costA + x.costB));
 }
+// Số hồ sơ của 1 dòng xuất toán: để trống/không hợp lệ = 1; nhập số thì tính đúng số đó
+function hoSo(l) { const n = Math.floor(Number(l && l.ho_so)); return n >= 1 ? n : 1; }
+function sumHoSo(rows) { return rows.reduce((s, r) => s + hoSo(r), 0); }
 function quarterSummaries(sourceRows) {
   const src = sourceRows || state.lines;
   const qs = quarterList();
@@ -398,7 +400,7 @@ function quarterSummaries(sourceRows) {
     const finalizedCost = rows.reduce((s, r) => s + (r.cost || 0), 0);
     return {
       key: p.key, label: `${p.quarter}/${p.year}`, quarter: p.quarter, year: p.year,
-      revenue: p.revenue, finalizedCost, lineCount: rows.length,
+      revenue: p.revenue, finalizedCost, lineCount: sumHoSo(rows),
       rateVsRevenue: p.revenue ? finalizedCost / p.revenue : null,
     };
   });
@@ -443,7 +445,7 @@ function categorySummaries(sourceRows) {
     if (!byCode.has(l.code)) byCode.set(l.code, { code: l.code, name: categoryNameOf(l.code) || l.error_desc || '', finalizedCost: 0, lineCount: 0, quarters: new Set() });
     const rec = byCode.get(l.code);
     rec.finalizedCost += l.cost || 0;
-    rec.lineCount += 1;
+    rec.lineCount += hoSo(l);
     rec.quarters.add(qKey(l.quarter, l.year));
   });
   return Array.from(byCode.values()).map((r) => ({ ...r, quarterCount: r.quarters.size }));
@@ -491,7 +493,7 @@ function paretoData(metric, scope, topN) {
   rows.forEach((l) => {
     if (!l.code) return;
     if (!byCode.has(l.code)) byCode.set(l.code, { code: l.code, value: 0 });
-    byCode.get(l.code).value += metric === 'cost' ? (l.cost || 0) : 1;
+    byCode.get(l.code).value += metric === 'cost' ? (l.cost || 0) : hoSo(l);
   });
   const sorted = Array.from(byCode.values()).filter((r) => r.value > 0).sort((a, b) => b.value - a.value).slice(0, topN);
   const total = Array.from(byCode.values()).reduce((s, r) => s + r.value, 0);
@@ -533,7 +535,7 @@ function overviewTrendScope() {
 function scopedTotals() {
   const rows = scopedLines();
   const finalizedCost = rows.reduce((s, r) => s + (r.cost || 0), 0);
-  const lineCount = rows.length;
+  const lineCount = sumHoSo(rows);
   let revenue = filteredQuarterSummaries().reduce((s, q) => s + q.revenue, 0);
   return { finalizedCost, lineCount, revenue, rateVsRevenue: revenue ? finalizedCost / revenue : null };
 }
@@ -559,7 +561,7 @@ function heatmapData(mode, axis, metric, cause) {
   const matrix = entities.map((ent) => {
     const rowVals = axisKeys.map((ak) => {
       const subset = rows.filter((r) => r._entity === ent && (axis === 'quarter' ? qKey(r.quarter, r.year) === ak : r.code === ak));
-      return metric === 'cost' ? subset.reduce((s, r) => s + (r.cost || 0), 0) : subset.length;
+      return metric === 'cost' ? subset.reduce((s, r) => s + (r.cost || 0), 0) : sumHoSo(subset);
     });
     const total = rowVals.reduce((s, v) => s + v, 0);
     const quarterCount = new Set(rows.filter((r) => r._entity === ent).map((r) => qKey(r.quarter, r.year))).size;
@@ -594,8 +596,8 @@ function riskScoreForQuarter(qKeyStr) {
     if (!byCode.has(l.code)) byCode.set(l.code, { code: l.code, name: categoryNameOf(l.code), cost: 0, lines: 0, caNhan: 0 });
     const rec = byCode.get(l.code);
     rec.cost += l.cost || 0;
-    rec.lines += 1;
-    if (l.cause === 'Cá nhân') rec.caNhan += 1;
+    rec.lines += hoSo(l);
+    if (l.cause === 'Cá nhân') rec.caNhan += hoSo(l);
   });
 
   return Array.from(byCode.values()).map((rec) => {
@@ -628,7 +630,7 @@ function shiHeaderStats() {
   return [
     { label: 'Kỳ', value: quarterList().length },
     { label: 'Chuyên đề', value: codes.size },
-    { label: 'Dòng xuất toán', value: state.lines.length.toLocaleString('vi-VN') },
+    { label: 'Hồ sơ xuất toán', value: sumHoSo(state.lines).toLocaleString('vi-VN') },
   ];
 }
 function render() {
@@ -967,7 +969,7 @@ function overviewCatSearchAnalyze(term) {
     if (!map.has(k)) map.set(k, { key: k, label: `${l.quarter}/${l.year}`, quarter: l.quarter, year: l.year, cost: 0, count: 0 });
     const r = map.get(k);
     r.cost += l.cost || 0;
-    r.count += 1;
+    r.count += hoSo(l);
   });
   const series = Array.from(map.values()).sort((a, b) => a.year - b.year || compareKi(a.quarter, b.quarter));
   return { mode: 'found', codes: matchingCodes, rows, series };
@@ -1430,14 +1432,14 @@ function detailsHTML() {
           <tr>
             <th class="text-left px-1.5 py-2">Kì</th><th class="text-left px-1.5 py-2">Năm</th>
             <th class="text-left px-1.5 py-2">Người thực hiện/CĐ</th><th class="text-left px-1.5 py-2">Khoa</th>
-            <th class="text-right px-1.5 py-2">Chi phí</th><th class="text-left px-1.5 py-2">Dịch vụ</th>
+            <th class="text-right px-1.5 py-2">Chi phí</th><th class="text-right px-1.5 py-2" title="Để trống = 1 hồ sơ">Số hồ sơ</th><th class="text-left px-1.5 py-2">Dịch vụ</th>
             <th class="text-left px-1.5 py-2">Lỗi</th><th class="text-left px-1.5 py-2">Phụ lục</th>
             <th class="text-left px-1.5 py-2">Nguyên nhân</th><th class="text-left px-1.5 py-2">Người khắc phục</th><th class="text-left px-1.5 py-2">Mã LK</th><th></th>
           </tr>
         </thead>
         <tbody>
           ${pageRows.map((l) => lineRow(l, canEdit)).join('')}
-          ${rows.length === 0 ? '<tr><td colspan="12" class="text-center text-slate-400 py-8">Chưa có dữ liệu</td></tr>' : ''}
+          ${rows.length === 0 ? '<tr><td colspan="13" class="text-center text-slate-400 py-8">Chưa có dữ liệu</td></tr>' : ''}
         </tbody>
       </table>
     </div>
@@ -1461,6 +1463,7 @@ function lineRow(l, canEdit) {
       <td class="px-1.5 py-1"><input ${dis} type="text" data-field="individual" value="${escapeHtml(l.individual || '')}" class="border border-slate-200 rounded px-1 py-1 w-24 text-xs" /></td>
       <td class="px-1.5 py-1"><input ${dis} type="text" data-field="department" value="${escapeHtml(l.department || '')}" class="border border-slate-200 rounded px-1 py-1 w-16 text-xs" /></td>
       <td class="px-1.5 py-1"><input ${dis} type="text" inputmode="numeric" data-field="cost" value="${fmtVND(l.cost || 0)}" class="border border-slate-200 rounded px-1 py-1 w-24 text-xs text-right" /></td>
+      <td class="px-1.5 py-1"><input ${dis} type="number" min="1" step="1" data-field="ho_so" value="${hoSo(l)}" title="Để trống = 1 hồ sơ" class="border border-slate-200 rounded px-1 py-1 w-16 text-xs text-right" /></td>
       <td class="px-1.5 py-1"><textarea ${dis} rows="2" data-field="service" class="border border-slate-200 rounded px-1 py-1 w-64 text-xs align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.service || '')}</textarea></td>
       <td class="px-1.5 py-1"><textarea ${dis} rows="2" data-field="error_desc" class="border border-slate-200 rounded px-1 py-1 w-72 text-xs align-top resize-y" style="white-space: pre-wrap; overflow-wrap: break-word;">${escapeHtml(l.error_desc || '')}</textarea></td>
       <td class="px-1.5 py-1"><input ${dis} type="text" data-field="code" value="${escapeHtml(l.code || '')}" class="border border-slate-200 rounded px-1 py-1 w-20 text-xs font-mono" /></td>
@@ -1497,7 +1500,7 @@ function computeSearchGroups(mode, rows) {
     if (!map.has(k)) map.set(k, { key: k, cost: 0, count: 0, quarters: new Set() });
     const rec = map.get(k);
     rec.cost += l.cost || 0;
-    rec.count += 1;
+    rec.count += hoSo(l);
     rec.quarters.add(qKey(l.quarter, l.year));
   });
   return Array.from(map.values()).map((r) => ({ key: r.key, cost: r.cost, count: r.count, quarterCount: r.quarters.size }))
@@ -4436,7 +4439,7 @@ function guideHTML() {
       </div>
       ${guideSection('1. Cấu trúc dữ liệu', [
         'Mỗi dòng dữ liệu = 1 dịch vụ/thuốc/vật tư bị xuất toán, kèm Khoa, Người thực hiện, Chi phí, mã Phụ lục (chuyên đề), Nguyên nhân (Cá nhân/Hệ thống).',
-        'Số hồ sơ xuất toán của 1 chuyên đề = số dòng có cùng mã Phụ lục trong 1 quý.',
+        'Số hồ sơ xuất toán của 1 chuyên đề = tổng cột "Số hồ sơ" của các dòng có cùng mã Phụ lục trong 1 quý (dòng nào để trống cột này thì tính là 1 hồ sơ).',
       ])}
       ${guideSection('2. Các tab', [
         '<b>Tổng quan</b>: cảnh báo chuyên đề mới/lặp lại, thẻ số liệu, xu hướng theo kì, Pareto chi phí — có bộ lọc Năm/Kỳ/Khoa/Người/Nhóm lỗi.',
@@ -4735,7 +4738,7 @@ async function saveLineField(id, field, value) {
     const ok = await confirmPassword('sửa dữ liệu kì đã khoá');
     if (!ok) { renderTab(); return; }
   }
-  const patch = { [field]: field === 'year' ? Number(value) : field === 'cost' ? parseMoney(value) : value };
+  const patch = { [field]: field === 'year' ? Number(value) : field === 'cost' ? parseMoney(value) : field === 'ho_so' ? (Math.floor(Number(value)) >= 1 ? Math.floor(Number(value)) : 1) : value };
   await sb.from('bhyt_lines').update(patch).eq('id', id);
   if (row) Object.assign(row, patch);
 }
@@ -4825,7 +4828,7 @@ async function emptyOldTrash() {
 }
 
 async function addLineRow() {
-  const payload = { quarter: 'Q1', year: new Date().getFullYear(), individual: '', department: '', cost: 0, service: '', error_desc: '', code: '', cause: null, remediator: '', link_code: '' };
+  const payload = { quarter: 'Q1', year: new Date().getFullYear(), individual: '', department: '', cost: 0, ho_so: 1, service: '', error_desc: '', code: '', cause: null, remediator: '', link_code: '' };
   const { data, error } = await sb.from('bhyt_lines').insert(payload).select().single();
   if (!error) { state.lines.push(data); renderTab(); }
 }
@@ -5050,6 +5053,7 @@ async function handleImport(e) {
         individual: String(r['Họ tên người thực hiện/CĐ'] || '').trim(),
         department: String(r['Khoa'] || '').trim(),
         cost: Number(r['Chi phí']) || 0,
+        ho_so: (() => { const n = Math.floor(Number(String(r['Số hồ sơ'] ?? '').replace(/[.,\s]/g, ''))); return n >= 1 ? n : 1; })(),
         service: String(r['Dịch vụ'] || '').trim(),
         error_desc: String(r['Lỗi'] || '').trim(),
         code: resolveCode(String(r['Phụ lục'] || '').trim()),
@@ -5222,7 +5226,7 @@ function handleExport() {
   const wb = XLSX.utils.book_new();
   const lineSheet = XLSX.utils.json_to_sheet(state.lines.map((l) => ({
     'Quý': QUARTER_VN[l.quarter] || l.quarter, 'Năm': l.year, 'Họ tên người thực hiện/CĐ': l.individual,
-    'Khoa': l.department, 'Chi phí': l.cost, 'Dịch vụ': l.service, 'Lỗi': l.error_desc, 'Phụ lục': l.code, 'Nguyên nhân': l.cause, 'Người khắc phục': l.remediator, 'Mã LK': l.link_code,
+    'Khoa': l.department, 'Chi phí': l.cost, 'Số hồ sơ': hoSo(l), 'Dịch vụ': l.service, 'Lỗi': l.error_desc, 'Phụ lục': l.code, 'Nguyên nhân': l.cause, 'Người khắc phục': l.remediator, 'Mã LK': l.link_code,
   })));
   XLSX.utils.book_append_sheet(wb, lineSheet, 'Chi tiết xuất toán');
   const perSheet = XLSX.utils.json_to_sheet(state.periods.map((p) => ({ 'Quý': QUARTER_VN[p.quarter] || p.quarter, 'Năm': p.year, 'Doanh thu BHYT': p.revenue })));
